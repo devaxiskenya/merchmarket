@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Orders — MerchMarket</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="merchmarket.css">
+  <style>
+    body { padding-top: 90px; }
+    .orders-section {
+      max-width: 1100px;
+      margin: 2rem auto;
+      padding: 0 2rem;
+    }
+    .orders-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #FFD8B5, #c47d2e);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 2rem;
+    }
+    .orders-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(170,111,2,.3);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    .orders-table thead tr {
+      background: rgba(170,111,2,.15);
+    }
+    .orders-table th {
+      padding: 1rem 1.2rem;
+      text-align: left;
+      font-weight: 600;
+      color: #ffd8b5;
+      font-size: .85rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      border-bottom: 1px solid rgba(170,111,2,.3);
+    }
+    .orders-table td {
+      padding: 1rem 1.2rem;
+      border-bottom: 1px solid rgba(255,255,255,.07);
+      color: #fff;
+      font-size: .95rem;
+    }
+    .orders-table tbody tr:last-child td { border-bottom: none; }
+    .orders-table tbody tr:hover { background: rgba(170,111,2,.07); }
+
+    .status-badge {
+      display: inline-block;
+      padding: .3rem .9rem;
+      border-radius: 20px;
+      font-size: .78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .status-badge.shipped     { background: rgba(33,150,243,.15); color: #2196f3; border: 1px solid rgba(33,150,243,.3); }
+    .status-badge.processing  { background: rgba(255,235,59,.15); color: #ffeb3b; border: 1px solid rgba(255,235,59,.3); }
+    .status-badge.delivered   { background: rgba(76,175,80,.15);  color: #4caf50; border: 1px solid rgba(76,175,80,.3);  }
+    .status-badge.pending     { background: rgba(255,152,0,.15);  color: #ff9800; border: 1px solid rgba(255,152,0,.3);  }
+    .status-badge.cancelled   { background: rgba(244,67,54,.12);  color: #f44336; border: 1px solid rgba(244,67,54,.2);  }
+
+    .empty-orders {
+      text-align: center;
+      padding: 5rem 2rem;
+      color: #a0a0a0;
+    }
+    .empty-orders .icon { font-size: 3.5rem; margin-bottom: 1rem; }
+    .empty-orders a {
+      color: #c47d2e;
+      text-decoration: none;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body class="order-body body">
+
+  <nav class="navbar">
+    <div class="logo" onclick="location.href='index.html'">MerchMarket</div>
+    <ul class="nav-links" style="list-style:none;">
+      <a href="index.html" style="color:#a0a0a0;text-decoration:none;font-weight:500;">Home</a>
+      <a href="marketplace.html" style="color:#a0a0a0;text-decoration:none;font-weight:500;">Marketplace</a>
+      <a href="wishlist.html" style="color:#a0a0a0;text-decoration:none;font-weight:500;">♥ Wishlist</a>
+    </ul>
+  </nav>
+
+  <section class="orders-section">
+    <h1 class="orders-title">My Orders</h1>
+
+    <!-- Table structure is now correct: thead for headers, tbody for data rows -->
+    <table class="orders-table">
+      <thead>
+        <tr>
+          <th>Order ID</th>
+          <th>Product</th>
+          <th>Quantity</th>
+          <th>Address</th>
+          <th>Date</th>
+          <th>Status</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody id="orders-body">
+        <!-- Dynamic orders injected here by JS -->
+        <!-- Static fallback rows shown if no JS orders exist -->
+        <!-- Static fallback rows removed -->
+
+      </tbody>
+    </table>
+  </section>
+
+  <script src="data-store.js"></script>
+  <script src="storage.js"></script>
+  <script src="merchmarket.js"></script>
+  <script src="carousel.js"></script>
+  <script>
+    /* If the user has real orders in localStorage, show those instead of static rows */
+    document.addEventListener('DOMContentLoaded', () => {
+      const user = getCurrentUser();
+      let realOrders = [];
+      if (user) {
+        const allKeys = Object.keys(localStorage).filter(k => k.startsWith('merchOrders_'));
+        allKeys.forEach(key => {
+          const brandOrders = loadLocal(key, []);
+          brandOrders.forEach(o => {
+            if (o.customer && o.customer.email === user.email) realOrders.push(o);
+          });
+        });
+      }
+      if (realOrders.length > 0) {
+        document.querySelectorAll('.static-fallback').forEach(r => r.remove());
+      }
+      renderMemberOrders();
+    });
+  </script>
+</body>
+</html>

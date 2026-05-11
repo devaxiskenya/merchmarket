@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cart — MerchMarket</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="merchmarket.css">
+  <link rel="stylesheet" href="cart.css">
+</head>
+<body class="body">
+
+  <nav>
+    <div class="logo" onclick="location.href='index.html'">MerchMarket</div>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+
+      <a href="marketplace.html">Marketplace</a>
+      <a href="wishlist.html" class="active">♡ Wishlist</a>
+    </div>
+  </nav>
+
+  <div class="page" id="page-cart">
+    <div style="max-width:1100px;margin:0 auto;padding:2rem 2rem 0;">
+      <div style="background:rgba(255,255,255,.04);border:1px solid rgba(170,111,2,.3);border-radius:16px;padding:2rem;">
+        <h2 style="font-family:'Syne',sans-serif;margin:0 0 1rem;color:#ffd8b5;">Cart replaced by Wishlist</h2>
+        <p style="color:#a0a0a0;margin:0 0 1.5rem;">Use the wishlist to request orders.</p>
+        <a href="wishlist.html" class="btn-primary" style="display:inline-block;text-decoration:none;">Go to Wishlist →</a>
+      </div>
+    </div>
+
+    <!-- Cart UI removed (disabled) -->
+    <main style="display:none;">
+      <div class="cart-page-header">
+        <h2 class="cart-page-title">Your Cart <span id="cart-title-count"></span></h2>
+        <div class="cart-actions">
+          <button class="btn-ghost" onclick="clearCart()" id="clear-btn" style="display:none;">Clear all</button>
+          <a href="marketplace.html" class="btn-ghost">← Continue Shopping</a>
+        </div>
+      </div>
+
+      <!-- Empty state -->
+      <div class="cart-empty" id="cart-empty" style="display:none;">
+        <div class="empty-icon">🛒</div>
+        <p class="empty-msg">Your cart is empty</p>
+        <a href="marketplace.html" class="btn-primary" style="display:inline-block;text-decoration:none;">Browse products</a>
+      </div>
+
+      <!-- Cart contents -->
+      <div class="cart-layout" id="cart-contents" style="display:none;">
+        <div class="cart-items-col">
+          <div class="cart-table-head">
+            <span></span>
+            <span>Item</span>
+            <span>Qty</span>
+            <span style="text-align:right;">Price</span>
+            <span></span>
+          </div>
+          <div id="cart-items-list"></div>
+        </div>
+
+        <div class="summary-panel">
+          <p class="summary-label">Order Summary</p>
+
+          <div class="summary-line">
+            <span>Subtotal</span>
+            <span class="summary-val" id="s-subtotal">KES 0</span>
+          </div>
+          <div class="summary-line" id="s-ship-line">
+            <span>Shipping</span>
+            <span class="summary-val" id="s-shipping">KES 1,200</span>
+          </div>
+
+          <div class="ship-bar-wrap">
+            <div class="ship-bar-bg">
+              <div class="ship-bar-fill" id="ship-bar" style="width:0%;"></div>
+            </div>
+          </div>
+          <p class="free-ship-note" id="ship-note">Add KES 7,500 more for free shipping</p>
+
+          <hr class="summary-divider">
+
+          <div class="summary-total">
+            <span class="summary-total-label">Total</span>
+            <span class="summary-total-val" id="s-total">KES 0</span>
+          </div>
+
+          <button class="checkout-btn">Proceed to Checkout →</button>
+          <p class="save-note">🔒 Cart saved automatically</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="data-store.js"></script>
+  <script src="storage.js"></script>
+  <script src="merchmarket.js"></script>
+  <script src="cart.js"></script>
+  <script>
+    // Cart page disabled; redirect to wishlist.
+    window.location.replace('wishlist.html');
+  </script>
+</body>
+</html>

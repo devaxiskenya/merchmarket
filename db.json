@@ -1,0 +1,10 @@
+{
+  "merchUsers": [],
+  "merchInventory": {},
+  "merchOrders": {},
+  "merchCart": [],
+  "meta": {
+    "currentUserId": null
+  }
+}
+

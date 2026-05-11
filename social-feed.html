@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Discover — MerchMarket</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="merchmarket.css">
+</head>
+<body class="body">
+
+  <nav>
+    <div class="logo" onclick="location.href='index.html'">MerchMarket</div>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      
+      <a href="social-feed.html" class="active">Discover</a>
+      <a href="marketplace.html">Marketplace</a>
+      <a href="wishlist.html">♡ <span id="wishlist-count" style="display:none;">0</span></a>
+    </div>
+  </nav>
+
+  
+
+  <section class="feed-container" style="max-width:1400px;margin:0 auto;padding:3rem 2rem;">
+
+    <!-- Divider — CSS, not a <p> full of dashes -->
+    <hr style="border:none;border-top:1px solid rgba(170,111,2,.25);margin-bottom:2.5rem;">
+
+    <div class="feed-grid" id="feedGrid">
+
+      <!-- Post 1 -->
+      <div class="post-card" data-category="trending">
+        <div class="post-image" style="background:linear-gradient(135deg,#667eea,#764ba2);">
+          <div class="post-badge">🔥 Trending</div>
+        </div>
+        <div class="post-content">
+          <div class="post-header">
+            <div class="avatar" style="background:linear-gradient(135deg,#667eea,#764ba2);"></div>
+            <div class="post-info">
+              <h4>Creative Brand Co.</h4>
+              <span>2 hours ago</span>
+            </div>
+            <button class="follow-btn" onclick="toggleFollow(this)">Follow</button>
+          </div>
+          <p class="post-description">New summer collection drop! Vibrant colours for the season 🌈 Limited edition pieces available now.</p>
+          <div class="post-tags">
+            <span class="tag">#summer</span>
+            <span class="tag">#vibrant</span>
+            <span class="tag">#limited</span>
+          </div>
+          <div class="post-stats">
+            <span class="stat" onclick="toggleLike(this)">❤️ <span class="like-count">1.2K</span></span>
+            <span class="stat">💬 89</span>
+            <span class="stat">🔄 234</span>
+            <span class="stat">🔖 Save</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Post 2 -->
+      <div class="post-card" data-category="new">
+        <div class="post-image" style="background:linear-gradient(135deg,#f093fb,#f5576c);">
+          <div class="post-badge">✨ New</div>
+        </div>
+        <div class="post-content">
+          <div class="post-header">
+            <div class="avatar" style="background:linear-gradient(135deg,#f093fb,#f5576c);"></div>
+            <div class="post-info">
+              <h4>Streetwear Studio</h4>
+              <span>5 hours ago</span>
+            </div>
+            <button class="follow-btn" onclick="toggleFollow(this)">Follow</button>
+          </div>
+          <p class="post-description">Minimalist design meets maximum impact ⚡ Clean lines, bold statements.</p>
+          <div class="post-tags">
+            <span class="tag">#minimalist</span>
+            <span class="tag">#streetwear</span>
+          </div>
+          <div class="post-stats">
+            <span class="stat" onclick="toggleLike(this)">❤️ <span class="like-count">856</span></span>
+            <span class="stat">💬 45</span>
+            <span class="stat">🔄 156</span>
+            <span class="stat">🔖 Save</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Post 3 -->
+      <div class="post-card" data-category="trending">
+        <div class="post-image" style="background:linear-gradient(135deg,#4facfe,#00f2fe);"></div>
+        <div class="post-content">
+          <div class="post-header">
+            <div class="avatar" style="background:linear-gradient(135deg,#4facfe,#00f2fe);"></div>
+            <div class="post-info">
+              <h4>Retro Vibes</h4>
+              <span>1 day ago</span>
+            </div>
+            <button class="follow-btn following" onclick="toggleFollow(this)" style="border-color:#c47d2e;color:#ffd8b5;">Following</button>
+          </div>
+          <p class="post-description">Bringing back the 80s with a modern twist 🎨 Nostalgia never looked so good!</p>
+          <div class="post-tags">
+            <span class="tag">#retro</span>
+            <span class="tag">#80s</span>
+            <span class="tag">#nostalgia</span>
+          </div>
+          <div class="post-stats">
+            <span class="stat liked" onclick="toggleLike(this)" style="color:#ff3366;">❤️ <span class="like-count">2.3K</span></span>
+            <span class="stat">💬 167</span>
+            <span class="stat">🔄 445</span>
+            <span class="stat">🔖 Save</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Post 4 -->
+      <div class="post-card" data-category="all">
+        <div class="post-image" style="background:linear-gradient(135deg,#fa709a,#fee140);"></div>
+        <div class="post-content">
+          <div class="post-header">
+            <div class="avatar" style="background:linear-gradient(135deg,#fa709a,#fee140);"></div>
+            <div class="post-info">
+              <h4>Designer Collective</h4>
+              <span>2 days ago</span>
+            </div>
+            <button class="follow-btn" onclick="toggleFollow(this)">Follow</button>
+          </div>
+          <p class="post-description">Limited edition pieces now available! Don't miss out 🔥 Only 100 units produced.</p>
+          <div class="post-tags">
+            <span class="tag">#limited</span>
+            <span class="tag">#exclusive</span>
+          </div>
+          <div class="post-stats">
+            <span class="stat" onclick="toggleLike(this)">❤️ <span class="like-count">3.1K</span></span>
+            <span class="stat">💬 201</span>
+            <span class="stat">🔄 678</span>
+            <span class="stat">🔖 Save</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Post 5 -->
+      <div class="post-card" data-category="new">
+        <div class="post-image" style="background:linear-gradient(135deg,#a8edea,#fed6e3);">
+          <div class="post-badge">♻️ Eco</div>
+        </div>
+        <div class="post-content">
+          <div class="post-header">
+            <div class="avatar" style="background:linear-gradient(135deg,#a8edea,#fed6e3);"></div>
+            <div class="post-info">
+              <h4>Eco Designs</h4>
+              <span>3 days ago</span>
+            </div>
+            <button class="follow-btn" onclick="toggleFollow(this)">Follow</button>
+          </div>
+          <p class="post-description">Sustainable fashion for a better tomorrow 🌱 Made with 100% organic materials.</p>
+          <div class="post-tags">
+            <span class="tag">#sustainable</span>
+            <span class="tag">#eco</span>
+            <span class="tag">#organic</span>
+          </div>
+          <div class="post-stats">
+            <span class="stat" onclick="toggleLike(this)">❤️ <span class="like-count">1.8K</span></span>
+            <span class="stat">💬 92</span>
+            <span class="stat">🔄 312</span>
+            <span class="stat">🔖 Save</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Post 6 -->
+      <div class="post-card" data-category="trending">
+        <div class="post-image" style="background:linear-gradient(135deg,#ffecd2,#fcb69f);">
+          <div class="post-badge">🔥 Hot</div>
+        </div>
+        <div class="post-content">
+          <div class="post-header">
+            <div class="avatar" style="background:linear-gradient(135deg,#ffecd2,#fcb69f);"></div>
+            <div class="post-info">
+              <h4>Artistic Threads</h4>
+              <span>4 days ago</span>
+            </div>
+            <button class="follow-btn" onclick="toggleFollow(this)">Follow</button>
+          </div>
+          <p class="post-description">Abstract art meets wearable fashion 🎨 Each piece is a unique canvas.</p>
+          <div class="post-tags">
+            <span class="tag">#art</span>
+            <span class="tag">#abstract</span>
+            <span class="tag">#unique</span>
+          </div>
+          <div class="post-stats">
+            <span class="stat" onclick="toggleLike(this)">❤️ <span class="like-count">2.7K</span></span>
+            <span class="stat">💬 134</span>
+            <span class="stat">🔄 521</span>
+            <span class="stat">🔖 Save</span>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- #feedGrid -->
+
+    <div style="text-align:center;margin-top:3rem;">
+      <button class="btn btn-primary" onclick="loadMore()">Load More Posts</button>
+    </div>
+
+  </section>
+
+  <script src="merchmarket.js"></script>
+</body>
+</html>

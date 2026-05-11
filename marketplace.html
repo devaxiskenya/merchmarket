@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marketplace — MerchMarket</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="merchmarket.css">
+</head>
+<body class="body">
+
+  <nav>
+    <div class="logo" onclick="location.href='index.html'">MerchMarket</div>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="marketplace.html" class="active">Marketplace</a>
+      <a href="wishlist.html" style="position:relative;">
+        ♡ Wishlist
+        <span class="wishlist-count" id="wishlist-count" style="display:none;position:absolute;top:-8px;right:-10px;background:#c47d2e;color:#000;border-radius:50%;min-width:18px;height:18px;font-size:.7rem;font-weight:700;padding:0 4px;display:none;align-items:center;justify-content:center;">0</span>
+      </a>
+      
+    </div>
+  </nav>
+
+  <div class="marketplace-container">
+    <div class="marketplace-header">
+      <h1>Discover Unique Merch from thriftshops and world wide</h1>
+      <div class="search-bar" style="display:flex;gap:0.8rem;flex:1;max-width:700px;">
+        <input type="text" id="searchInput" class="search-input" placeholder="Search products, brands, tags…" oninput="searchProducts()">
+        <button class="search-btn" onclick="searchProducts()">Search</button>
+      </div>
+    </div>
+
+    <!-- Product Grid — JS will manage this once initMarketplace() runs -->
+    <div class="product-grid" id="productGrid">
+      <!-- Rendered by merchmarket.js initMarketplace() -->
+    </div>
+  </div>
+
+<script src="data-store.js"></script>
+<script src="storage.js"></script>
+<script src="merchmarket.js"></script>
+<script src="carousel.js"></script>
+
+</body>
+</html>
+

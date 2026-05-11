@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wishlist — MerchMarket</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="merchmarket.css">
+  <style>
+    body { padding-top: 0; }
+    .wishlist-page { max-width: 1200px; margin: 5.5rem auto 3rem; padding: 0 2rem; }
+    .wishlist-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #FFD8B5, #c47d2e);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 1.6rem;
+    }
+    .wishlist-grid { display: grid; grid-template-columns: 1fr 380px; gap: 2rem; align-items: start; }
+    @media (max-width: 900px) { .wishlist-grid { grid-template-columns: 1fr; } }
+    .panel {
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(170,111,2,.3);
+      border-radius: 16px;
+      padding: 1.6rem;
+    }
+    .empty {
+      text-align: center;
+      padding: 5rem 2rem;
+      color: #a0a0a0;
+    }
+    .vendor-block { margin-bottom: 1.4rem; }
+    .vendor-header { display:flex; align-items:center; justify-content:space-between; gap: 1rem; margin-bottom:.9rem; }
+    .vendor-name { font-weight: 800; font-family: 'Syne', sans-serif; color: #ffd8b5; }
+    .vendor-meta { color: #a0a0a0; font-size: .85rem; }
+
+    .wishlist-item {
+      display:grid;
+      grid-template-columns: 64px 1fr 90px 36px;
+      gap: 1rem;
+      align-items:center;
+      padding: .9rem 0;
+      border-top: 1px solid rgba(255,255,255,.06);
+    }
+    .wishlist-item:first-child { border-top: none; }
+    .item-thumb { width:64px; height:64px; border-radius:10px; overflow:hidden; background: rgba(255,255,255,.04); }
+    .item-name { font-weight: 700; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
+    .item-sub { color:#a0a0a0; font-size: .82rem; margin-top:.2rem; }
+    .item-right { text-align:right; font-weight: 800; color:#ffd8b5; }
+    .remove-btn {
+      background:none; border:none; cursor:pointer; color:#555; width:36px; height:36px; border-radius:8px;
+      transition: all .15s;
+    }
+    .remove-btn:hover { color:#f44336; background: rgba(244,67,54,.1); }
+
+    .pay-method { margin-top: 1rem; }
+    .pay-method h3 { font-family: 'Syne', sans-serif; font-size:1.05rem; margin-bottom:.6rem; color:#ffd8b5; }
+    .pay-row { display:flex; justify-content:space-between; gap: 1rem; margin-bottom:.75rem; color:#a0a0a0; font-size:.92rem; }
+    .pay-val { color:#fff; font-weight:700; text-align:right; }
+    .pay-notice { color:#a0a0a0; font-size:.9rem; line-height:1.5; }
+    .primary-btn {
+      width:100%; padding: 1rem; border-radius: 12px; border:none;
+      background: linear-gradient(135deg, #c47d2e, #ffd8b5);
+      color:#0a0a0a; font-weight:800; font-family:'Syne',sans-serif;
+      cursor:pointer; transition: all .2s;
+    }
+    .primary-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(196,125,46,.4); }
+    .mini-note { font-size:.78rem; color:#555; text-align:center; margin-top:.75rem; }
+  </style>
+</head>
+<body class="body">
+  <nav>
+    <div class="logo" onclick="location.href='index.html'">MerchMarket</div>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="marketplace.html">Marketplace</a>
+      <a href="wishlist.html" class="active">♡ Wishlist</a>
+      <a href="wishlist.html" style="position:relative;display:none;"></a>
+    </div>
+  </nav>
+
+  <div class="wishlist-page">
+    <div class="wishlist-title">Your Wishlist (vendors payment details)</div>
+
+    <div class="wishlist-grid">
+      <div class="panel" id="wishlist-items-panel">
+        <div id="wishlist-empty" class="empty" style="display:none;">
+          <div style="font-size:3rem; margin-bottom:1rem;">♡</div>
+          <div>Your wishlist is empty.</div>
+        </div>
+        <div id="wishlist-vendors"></div>
+      </div>
+
+      <div class="panel">
+        <div style="font-family:'Syne',sans-serif; font-weight:900; color:#ffd8b5; font-size:1.2rem; margin-bottom:1rem;">Vendor Payment</div>
+        <div id="wishlist-payment-details">
+          <div class="pay-notice">Select a vendor section on the left to view their preferred payment method and details.</div>
+        </div>
+        <div style="margin-top:1.2rem;">
+          <button class="primary-btn" onclick="placeWishlistOrders()">Request Order →</button>
+          <div class="mini-note">No payment is taken on this site.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="data-store.js"></script>
+  <script src="storage.js"></script>
+  <script src="merchmarket.js"></script>
+  <script src="vendor-payments-loader.js"></script>
+  <script src="wishlist.js"></script>
+</body>
+</html>
+
+

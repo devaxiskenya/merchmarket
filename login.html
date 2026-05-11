@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — MerchMarket</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="merchmarket.css">
+  <style>
+    .login-container {
+      background: rgba(20,20,20,.85);
+      border: 1px solid rgba(170,111,2,.4);
+      border-radius: 20px;
+      padding: 3rem 2.5rem;
+      width: 100%;
+      max-width: 420px;
+      backdrop-filter: blur(20px);
+    }
+    .login-container .logo {
+      text-align: center;
+      margin-bottom: 2rem;
+      font-size: 2rem;
+      display: block;
+    }
+    .login-form input, .login-form select {
+      width: 100%;
+      padding: .9rem 1.2rem;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(170,111,2,.4);
+      border-radius: 10px;
+      color: #fff;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 1rem;
+      margin-bottom: 1.2rem;
+      transition: border-color .2s;
+    }
+    .login-form input:focus, .login-form select:focus {
+      outline: none;
+      border-color: #c47d2e;
+      box-shadow: 0 0 0 3px rgba(196,125,46,.15);
+    }
+    .login-form input::placeholder { color: #555; }
+    .login-button {
+      width: 100%;
+      padding: 1rem;
+      background: linear-gradient(135deg, #c47d2e, #ffd8b5);
+      color: #0a0a0a;
+      border: none;
+      border-radius: 12px;
+      font-family: 'Syne', sans-serif;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all .25s;
+      margin-top: .4rem;
+    }
+    .login-button:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(196,125,46,.4); }
+    .forgot-password {
+      display: block;
+      text-align: right;
+      color: #c47d2e;
+      font-size: .85rem;
+      margin-bottom: 1.2rem;
+      text-decoration: none;
+    }
+    .signup-text { text-align: center; margin-top: 1.5rem; color: #a0a0a0; font-size: .9rem; }
+    .signup-text a { color: #c47d2e; text-decoration: none; font-weight: 600; }
+    .signup-text a:hover { text-decoration: underline; }
+    .divider { display: flex; align-items: center; gap: 1rem; margin: 1.5rem 0; color: #555; font-size: .85rem; }
+    .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: rgba(255,255,255,.1); }
+    .type-btns { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; margin-bottom: 1.5rem; }
+    .type-btn {
+      padding: .7rem;
+      border: 2px solid rgba(170,111,2,.3);
+      border-radius: 10px;
+      background: transparent;
+      color: #a0a0a0;
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .2s;
+      font-size: .9rem;
+    }
+    .type-btn.active, .type-btn:hover {
+      border-color: #c47d2e;
+      color: #ffd8b5;
+      background: rgba(196,125,46,.12);
+    }
+    select option { background: #1e1e1e; }
+  </style>
+</head>
+<body class="auth-body body">
+
+  <div class="login-container">
+    <a class="logo" href="index.html">MerchMarket</a>
+
+    <h2 style="color:#ffd8b5;font-family:'Syne',sans-serif;text-align:center;margin-bottom:.5rem;">Welcome Back</h2>
+    <p style="color:#a0a0a0;text-align:center;margin-bottom:1.5rem;font-size:.9rem;">Sign in to your account</p>
+
+    <div class="type-btns">
+      <button class="type-btn active" onclick="setType('member', this)">👤 Member</button>
+      <button class="type-btn"        onclick="setType('brand',  this)">🏷️ Brand</button>
+    </div>
+
+    <form class="login-form" id="loginForm">
+      <input type="email"    id="login-email"    placeholder="Email address" required autocomplete="email">
+      <input type="password" id="login-password" placeholder="Password"       required autocomplete="current-password">
+      <a href="#" class="forgot-password">FORGOT PASSWORD?</a>
+      <button type="submit" class="login-button">LOG IN</button>
+    </form>
+
+    <div class="divider">or</div>
+
+    <p class="signup-text">Don't have an account? <a href="signup.html">Sign up</a></p>
+  </div>
+
+  <script src="merchmarket.js"></script>
+  <script>
+    let selectedType = 'member';
+    function setType(type, btn) {
+      selectedType = type;
+      document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }
+    document.getElementById('loginForm').addEventListener('submit', e => {
+      e.preventDefault();
+      const email    = document.getElementById('login-email').value.trim();
+      const password = document.getElementById('login-password').value;
+      /* Use the global login() from merchmarket.js */
+      login(email, password);
+    });
+  </script>
+</body>
+</html>
