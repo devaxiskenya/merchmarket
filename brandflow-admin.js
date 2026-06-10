@@ -64,15 +64,23 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function loadOrdersTab(filter = '') {
+  // AUTH DISABLED: Brand Admin works in guest mode.
+  // Prefer the selected user if they are a brand, otherwise fall back to the first brand.
   const user = getCurrentUser();
-  if (!user || user.type !== 'brand') {
-    showToast('Brand login required', 'error');
+  const brandUser = (user && user.type === 'brand')
+    ? user
+    : (typeof loadLocal === 'function'
+        ? (loadLocal('merchUsers', []).find(u => u.type === 'brand') || null)
+        : null);
+
+  if (!brandUser) {
+    showToast('No brand accounts found. Create one in Brand signup first.', 'error');
     return;
   }
-  
-  const ordersKey = getUserDataKey('merchOrders');
-  // Demo orders disabled.
+
+  const ordersKey = getUserDataKey('merchOrders', brandUser.id);
   let orders = loadLocal(ordersKey, []);
+
 
   
   if (filter) {
@@ -149,11 +157,19 @@ function renderOrdersTable(orders) {
 }
 
 function loadInventoryTab() {
+  // AUTH DISABLED: show inventory for the selected brand, else first available brand.
   const user = getCurrentUser();
-  if (!user || user.type !== 'brand') return;
-  
-  const invKey = getUserDataKey('merchInventory');
+  const brandUser = (user && user.type === 'brand')
+    ? user
+    : (typeof loadLocal === 'function'
+        ? (loadLocal('merchUsers', []).find(u => u.type === 'brand') || null)
+        : null);
+
+  if (!brandUser) return;
+
+  const invKey = getUserDataKey('merchInventory', brandUser.id);
   const inventory = loadLocal(invKey, []);
+
   
   const tbody = document.getElementById('inventory-table-body');
   if (tbody) {
@@ -434,21 +450,31 @@ function showInventoryModal(itemId = null) {
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
             <div>
-              <label style="display:block;margin-bottom:.4rem;font-weight:600;color:#333;font-size:.95rem;">Category</label>
-              <select id="item-category" required style="width:100%;padding:1rem;border:2px solid #e5e5e5;border-radius:12px;font-size:1rem;transition:border-color .2s;box-sizing:border-box;">
-                <option value="tshirts">T-Shirts</option>
-                <option value="hoodies">Hoodies</option>
-                <option value="caps">Caps</option>
-                <option value="mugs">Mugs</option>
-                <option value="bags">Bags</option>
-                <option value="other">Other</option>
+              <label style="display:block;margin-bottom:.4rem;font-weight:600;color:#333;font-size:.95rem;">Wear Category</label>
+              <select id="item-wear-category" required style="width:100%;padding:1rem;border:2px solid #e5e5e5;border-radius:12px;font-size:1rem;transition:border-color .2s;box-sizing:border-box;">
+                <option value="official" ${item?.wearCategory === 'official' ? 'selected' : ''}>Official Wear</option>
+                <option value="street" ${item?.wearCategory === 'street' ? 'selected' : ''}>Street Wear</option>
+                <option value="casual" ${item?.wearCategory === 'casual' ? 'selected' : ''}>Casual Wear</option>
+                <option value="other" ${!item?.wearCategory || ['other',''].includes(item?.wearCategory) ? 'selected' : ''}>Other / Unspecified</option>
               </select>
             </div>
             <div>
-              <label style="display:block;margin-bottom:.4rem;font-weight:600;color:#333;font-size:.95rem;">Tags</label>
-              <input type="text" id="item-tags" value="${item?.tags?.join(', ') || ''}" style="width:100%;padding:1rem;border:2px solid #e5e5e5;border-radius:12px;font-size:1rem;transition:border-color .2s;box-sizing:border-box;"
-                     placeholder="e.g. trendy, limited">
+              <label style="display:block;margin-bottom:.4rem;font-weight:600;color:#333;font-size:.95rem;">Item Type</label>
+              <select id="item-type" required style="width:100%;padding:1rem;border:2px solid #e5e5e5;border-radius:12px;font-size:1rem;transition:border-color .2s;box-sizing:border-box;">
+                <option value="torso" ${item?.itemType === 'torso' ? 'selected' : ''}>Torso</option>
+                <option value="trunks" ${item?.itemType === 'trunks' ? 'selected' : ''}>Trunks</option>
+                <option value="innies" ${item?.itemType === 'innies' ? 'selected' : ''}>Innies</option>
+                <option value="shoes" ${item?.itemType === 'shoes' ? 'selected' : ''}>Shoes</option>
+                <option value="socks" ${item?.itemType === 'socks' ? 'selected' : ''}>Socks</option>
+                <option value="other" ${item?.itemType === 'other' || !item?.itemType ? 'selected' : ''}>Other / Unspecified</option>
+              </select>
             </div>
+          </div>
+
+          <div>
+            <label style="display:block;margin-bottom:.4rem;font-weight:600;color:#333;font-size:.95rem;">Tags</label>
+            <input type="text" id="item-tags" value="${item?.tags?.join(', ') || ''}" style="width:100%;padding:1rem;border:2px solid #e5e5e5;border-radius:12px;font-size:1rem;transition:border-color .2s;box-sizing:border-box;"
+                   placeholder="e.g. trendy, limited">
           </div>
           
           <div>
@@ -497,10 +523,16 @@ function showInventoryModal(itemId = null) {
   // Show modal
   modal.classList.add('active');
 
-  // Pre-select category when editing
-  if (isEdit && item?.category) {
-    document.getElementById('item-category').value = item.category;
+  // Pre-select fields when editing
+  if (isEdit && item?.wearCategory) {
+    const wearEl = document.getElementById('item-wear-category');
+    if (wearEl) wearEl.value = item.wearCategory;
   }
+  if (isEdit && item?.itemType) {
+    const typeEl = document.getElementById('item-type');
+    if (typeEl) typeEl.value = item.itemType;
+  }
+
 
   // Prevent body scroll
   document.body.style.overflow = 'hidden';
@@ -572,7 +604,8 @@ function showInventoryModal(itemId = null) {
         sku: document.getElementById('item-sku').value.trim(),
         stock: parseInt(document.getElementById('item-stock').value) || 999,
         price: parseFloat(document.getElementById('item-price').value) || 0,
-        category: document.getElementById('item-category').value,
+        wearCategory: document.getElementById('item-wear-category')?.value || 'other',
+        itemType: document.getElementById('item-type')?.value || 'other',
         condition: 'new',
         tags: document.getElementById('item-tags').value.split(',').map(t => t.trim()).filter(Boolean),
         images: currentImages,

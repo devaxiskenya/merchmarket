@@ -10,7 +10,7 @@
 <body class="admin-body">
 
 <nav class="admin-navbar">
-    <div class="logo" onclick="location.href='index.html'">MerchMarket <span style="font-size:.9rem;font-weight:400;opacity:.7;">Brand Admin</span></div>
+<div class="logo" onclick="location.href='index.html'">MerchMarket <span style="font-size:.9rem;font-weight:400;opacity:.7;">Brand Admin</span><span id="brand-user-icon" style="margin-left:.6rem;font-size:0.95rem;opacity:.95;">🟣</span></div>
     <ul class="admin-nav-links">
       <li><a href="#" data-tab="orders"    class="nav-tab active">💆 Orders</a></li>
       <li><a href="#" data-tab="inventory" class="nav-tab">💎 Inventory</a></li>
@@ -184,10 +184,67 @@
   <script src="merchmarket.js"></script>
   <script src="brandflow-admin.js"></script>
   <script src="carousel.js"></script>
+  <script src="supabase.js"></script>
 
   <script>
-    // Small inline wiring for payment form labels
+    // Brand Admin access guard (prevents direct link access to brandflow.html)
     document.addEventListener('DOMContentLoaded', () => {
+      try {
+        // Hard guard: block brandflow UI unless a brand Supabase session is active.
+        // (Avoid relying on legacy localStorage keys that may not be set.)
+        const isBrand = async () => {
+          if (typeof getCurrentUser !== 'function') return false;
+          const user = await getCurrentUser();
+          return !!(user && user.type === 'brand');
+        };
+
+        (async () => {
+          try {
+            const ok = await isBrand();
+            if (!ok) {
+              window.location.href = 'marketplace.html';
+              return;
+            }
+
+            // Brand logged-in indicator
+            const iconEl = document.getElementById('brand-user-icon');
+            if (iconEl) {
+              iconEl.textContent = '✅';
+              iconEl.style.color = '#2ecc71';
+            }
+
+            const user = await getCurrentUser();
+            if (iconEl && user?.name) {
+              iconEl.title = `Logged in as: ${user.name}`;
+              iconEl.setAttribute('aria-label', `Logged in as ${user.name}`);
+            }
+          } catch (e) {
+            window.location.href = 'marketplace.html';
+          }
+        })();
+
+        return;
+
+        // Brand logged-in indicator
+        const iconEl = document.getElementById('brand-user-icon');
+        if (iconEl) {
+          iconEl.textContent = '✅';
+          iconEl.style.color = '#2ecc71';
+        }
+
+        // If multiple brands exist, show the current brand name on hover
+        if (iconEl && user?.name) {
+          iconEl.title = `Logged in as: ${user.name}`;
+          iconEl.setAttribute('aria-label', `Logged in as ${user.name}`);
+        }
+      } catch (e) {
+        // Fail closed
+        window.location.href = 'marketplace.html';
+        return;
+      }
+
+
+      // Small inline wiring for payment form labels
       const methodEl = document.getElementById('pm-method');
       const detailLabel = document.getElementById('pm-detail-label');
       const pmDetail = document.getElementById('pm-detail');
@@ -214,6 +271,7 @@
       update();
     });
   </script>
+
 </body>
 </html>
 

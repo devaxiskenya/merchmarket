@@ -31,6 +31,29 @@
       </div>
     </div>
 
+    <!-- Filter Tabs: Wear Type + Item Type -->
+    <div style="margin-top:-1rem; margin-bottom:1.2rem;">
+      <div class="filter-tabs" id="marketplaceWearTabs" aria-label="Wear type filters" style="margin-bottom:0.9rem;">
+        <button class="filter-tab active" type="button" onclick="setWearFilter('all')">All</button>
+        <button class="filter-tab" type="button" onclick="setWearFilter('official')">Official Wear</button>
+        <button class="filter-tab" type="button" onclick="setWearFilter('street')">Street Wear</button>
+        <button class="filter-tab" type="button" onclick="setWearFilter('casual')">Casual Wear</button>
+      </div>
+
+      <div class="filter-tabs" id="marketplaceItemTabs" aria-label="Item type filters">
+        <button class="filter-tab active" type="button" onclick="setItemFilter('all')">All</button>
+        <button class="filter-tab" type="button" onclick="setItemFilter('torso')">Torso</button>
+        <button class="filter-tab" type="button" onclick="setItemFilter('trunks')">Trunks</button>
+        <button class="filter-tab" type="button" onclick="setItemFilter('innies')">Innies</button>
+        <button class="filter-tab" type="button" onclick="setItemFilter('shoes')">Shoes</button>
+        <button class="filter-tab" type="button" onclick="setItemFilter('socks')">Socks</button>
+      </div>
+    </div>
+
+    <div class="results-header">
+      <div class="results-count">Showing <strong>0</strong> results</div>
+    </div>
+
     <!-- Product Grid — JS will manage this once initMarketplace() runs -->
     <div class="product-grid" id="productGrid">
       <!-- Rendered by merchmarket.js initMarketplace() -->
@@ -41,6 +64,7 @@
 <script src="storage.js"></script>
 <script src="merchmarket.js"></script>
 <script src="carousel.js"></script>
+<script src="supabase.js"></script>
 
 </body>
 </html>

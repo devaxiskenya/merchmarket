@@ -1,33 +1,38 @@
 /* ========================================
-   MERCHMARKET — FIXED v2.1 - No top-level await
-   Brand products now merge into marketplace!
+   MERCHMARKET — v3.0 (Supabase)
+   All persistence moved from localStorage
+   to Supabase. localStorage is only kept
+   for ephemeral UI state (badge counts,
+   etc.) that doesn't need server sync.
    ======================================== */
+
+/* ─── SUPABASE CLIENT ──────────────────────────────────────── */
+
+const SUPABASE_URL = 'https://omyzcnizwxumvookotsy.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_2Dvox3zHhG4WG7An-sn0tQ_eZ9z6xh8';
+// NOTE: supabase is the global from the CDN script tag, e.g.
+// <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 /* ─── SHARED UTILITIES ─────────────────────────────────────── */
 
+// Kept only for small ephemeral UI values (badge counts, dirty flags).
+// Do NOT use for any business data — use Supabase instead.
 function saveLocal(key, data) {
-  // Source of truth: localStorage (sync)
-  try {
-    localStorage.setItem(key, JSON.stringify(data));
-  } catch (e) {
-    console.error('saveLocal failed', key, e);
-  }
+  try { localStorage.setItem(key, JSON.stringify(data)); }
+  catch (e) { console.error('saveLocal failed', key, e); }
 }
 
 function loadLocal(key, fallback = []) {
-  // Source of truth: localStorage (sync)
   try {
     const raw = localStorage.getItem(key);
-    if (raw == null) return fallback;
-    return JSON.parse(raw);
+    return raw == null ? fallback : JSON.parse(raw);
   } catch (e) {
     console.error(`loadLocal failed for ${key}:`, e);
     return fallback;
   }
 }
-
-
-
 
 function debounce(fn, delay) {
   let t;
@@ -35,54 +40,6 @@ function debounce(fn, delay) {
     clearTimeout(t);
     t = setTimeout(() => fn.apply(this, args), delay);
   };
-}
-
-/* ─── CROSS-TAB / SAME-TAB COMMUNICATION ──────────────────── */
-
-let catalogChannel = null;
-try {
-  catalogChannel = new BroadcastChannel('merchmarket_catalog');
-} catch (e) {
-  console.log('BroadcastChannel not supported, using storage events only');
-}
-
-// Setup catalog update listeners once (prevents duplicate listeners on re-init)
-if (!window._mmCatalogListeners) {
-  window._mmCatalogListeners = true;
-
-  // BroadcastChannel listener (same-tab + cross-tab)
-  if (catalogChannel) {
-    catalogChannel.onmessage = (e) => {
-      if (e.data?.type === 'catalogUpdated') {
-        console.log('📡 Catalog update via BroadcastChannel - refreshing marketplace...');
-        if (typeof initMarketplace === 'function') initMarketplace();
-      }
-    };
-  }
-
-  // Storage event fallback (cross-tab only)
-  window.addEventListener('storage', (e) => {
-    if (e.key === 'merchCatalogDirty') {
-      console.log('💾 Catalog dirty via storage event - refreshing marketplace...');
-      if (typeof initMarketplace === 'function') initMarketplace();
-    }
-  });
-}
-
-// Polling fallback for browsers without BroadcastChannel
-if (!catalogChannel) {
-  let lastDirtyTimestamp = 0;
-  setInterval(() => {
-    const dirty = localStorage.getItem('merchCatalogDirty');
-    if (dirty) {
-      const ts = parseInt(dirty);
-      if (ts > lastDirtyTimestamp) {
-        lastDirtyTimestamp = ts;
-        console.log('⏰ Catalog dirty via polling - refreshing marketplace...');
-        if (typeof initMarketplace === 'function') initMarketplace();
-      }
-    }
-  }, 2000);
 }
 
 function showToast(msg, type = 'default') {
@@ -108,166 +65,278 @@ function showToast(msg, type = 'default') {
   toast._t = setTimeout(() => { toast.style.transform = 'translateY(120%)'; }, 4000);
 }
 
+/* ─── REAL-TIME CATALOG SYNC (replaces BroadcastChannel + polling) ─ */
+// Supabase real-time subscription replaces BroadcastChannel and
+// storage-event polling. When any row in `products` changes, the
+// marketplace re-renders automatically — across all tabs AND devices.
+
+function subscribeToProductChanges() {
+  db
+    .channel('products-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
+      console.log('📡 Product change detected — refreshing marketplace...');
+      if (typeof initMarketplace === 'function') initMarketplace();
+    })
+    .subscribe();
+}
+
 /* ─── AUTH & USER MANAGEMENT ──────────────────────────────── */
 
-let users = (typeof loadLocal === 'function') ? loadLocal('merchUsers', []) : (localStorage.getItem('merchUsers') ? JSON.parse(localStorage.getItem('merchUsers')) : []);
+function showAuthError(msg) { showToast(msg, 'error'); }
 
+// Fetch the public profile row that mirrors auth.users
+async function fetchProfile(userId) {
+  const { data, error } = await db
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
 
-function createAccount(type, name, email, password) {
+  if (error) { console.error('fetchProfile error:', error.message); return null; }
+  return data;
+}
+
+async function createAccount(type, name, email, password) {
   if (!type || !name || !email || !password) {
-    showToast('Please fill in all fields.', 'error'); 
+    showAuthError('Please fill in all fields.');
     return null;
   }
-  if (users.find(u => u.email === email)) {
-    showToast('An account with that email already exists.', 'error'); 
-    return null;
-  }
-  const user = {
-    id: Date.now(),
-    type, 
-    name,
+
+  const { data: signUpData, error: signUpError } = await db.auth.signUp({
     email,
-    password, 
-    createdAt: new Date().toISOString(),
-    orders: [],
-    profile: { avatar: '' }
-  };
-  users.push(user);
-  saveLocal('merchUsers', users);
-  if (user.type === 'brand') {
-    saveLocal(`merchInventory_${user.id}`, []);
-    saveLocal(`merchOrders_${user.id}`, []);
+    password,
+    options: { data: { name, type } }
+  });
+
+  if (signUpError) {
+    if (signUpError.message.toLowerCase().includes('already registered')) {
+      showAuthError('An account with that email already exists. Please log in.');
+    } else {
+      showAuthError(signUpError.message);
+    }
+    return null;
   }
+
+  const user = signUpData.user;
+
+  // Upsert profile (safe fallback if DB trigger already created it)
+  const { error: profileError } = await db.from('profiles').upsert({
+    id: user.id,
+    name,
+    type,
+    email,
+    created_at: new Date().toISOString()
+  });
+
+  if (profileError) console.error('Profile upsert error:', profileError.message);
+
   showToast(`Welcome, ${name}! Account created.`, 'success');
-  return user;
+  return { ...user, name, type };
 }
 
-function login(email, password) {
-  const user = users.find(u => u.email === email && u.password === password);
-  if (!user) { 
-    showToast('Invalid email or password.', 'error'); 
-    return null; 
+async function login(email, password) {
+  if (!email || !password) {
+    showAuthError('Please enter your email and password.');
+    return null;
   }
-  saveLocal('currentUserId', user.id);
-  setTimeout(() => {
-    window.location.href = user.type === 'brand' ? 'brandflow.html' : 'marketplace.html';
-  }, 800);
-  return user;
+
+  const { data, error } = await db.auth.signInWithPassword({ email, password });
+
+  if (error) { showAuthError('Invalid email or password.'); return null; }
+
+  const profile = await fetchProfile(data.user.id);
+  if (!profile) {
+    showAuthError('Account found but profile is missing. Contact support.');
+    return null;
+  }
+
+  // Sync auth to localStorage so brandflow.html guard (legacy) can work.
+  try {
+    localStorage.setItem('currentUserId', data.user.id);
+    localStorage.setItem('currentUserProfile', JSON.stringify({ ...data.user, ...profile }));
+  } catch (e) {
+    console.warn('localStorage sync failed:', e);
+  }
+
+  window.location.href = profile.type === 'brand' ? '/brandflow.html' : '/marketplace.html';
+  return { ...data.user, ...profile };
 }
 
-function logout() {
-  localStorage.removeItem('currentUserId');
+async function logout() {
+  await db.auth.signOut();
   window.location.href = 'index.html';
 }
 
-function getCurrentUser() {
-  const id = loadLocal('currentUserId', null);
-  return users.find(u => u.id == id) || null;
+// Returns the current session user merged with their profile row,
+// or null when no session exists.
+async function getCurrentUser() {
+  const { data: { session } } = await db.auth.getSession();
+  if (!session) return null;
+  const profile = await fetchProfile(session.user.id);
+  return profile ? { ...session.user, ...profile } : null;
 }
 
-function getUserDataKey(baseKey, userId = null) {
-  const user = userId ? users.find(u => u.id == userId) : getCurrentUser();
-  if (!user) return baseKey;
-  return `${baseKey}_${user.id}`;
+// Fires on every auth state transition (sign-in, sign-out, token refresh).
+// Individual pages listen for the custom `userReady` event instead of
+// calling getCurrentUser() on every load.
+db.auth.onAuthStateChange(async (event, session) => {
+  if (event === 'SIGNED_IN' && session) {
+    const profile = await fetchProfile(session.user.id);
+
+    // Keep legacy guards in sync with Supabase auth.
+    try {
+      localStorage.setItem('currentUserId', session.user.id);
+      if (profile) localStorage.setItem('currentUserProfile', JSON.stringify({ ...session.user, ...profile }));
+    } catch (e) {
+      console.warn('localStorage sync failed:', e);
+    }
+
+    window.dispatchEvent(new CustomEvent('userReady', { detail: profile }));
+  }
+
+  if (event === 'SIGNED_OUT') {
+    try {
+      localStorage.removeItem('currentUserId');
+      localStorage.removeItem('currentUserProfile');
+    } catch (e) {}
+
+    window.dispatchEvent(new CustomEvent('userReady', { detail: null }));
+  }
+});
+
+/* ─── WISHLIST / CART ──────────────────────────────────────── */
+// Wishlist rows live in Supabase `wishlists` table:
+//   id, user_id, product_id, quantity, added_at
+// Guest sessions use the anonymous Supabase session (or fall back to
+// localStorage if the user is truly unauthenticated).
+
+async function getWishlist() {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    // Unauthenticated fallback: keep in localStorage for the session
+    return loadLocal('mm_wishlist_guest', []);
+  }
+
+  const { data, error } = await db
+    .from('wishlists')
+    .select('*, products(*)')
+    .eq('user_id', user.id);
+
+  if (error) { console.error('getWishlist error:', error.message); return []; }
+  return data;
 }
 
-/* ─── CART SYSTEM ──────────────────────────────────────────── */
+async function updateCartBadge() {
+  const user = await getCurrentUser();
+  let count = 0;
 
-function getGlobalCart() { return []; }
-function saveGlobalCart(c) { /* cart disabled */ }
+  if (user) {
+    const { data } = await db
+      .from('wishlists')
+      .select('quantity')
+      .eq('user_id', user.id);
+    count = (data || []).reduce((s, i) => s + (i.quantity || 1), 0);
+  } else {
+    const local = loadLocal('mm_wishlist_guest', []);
+    count = local.reduce((s, i) => s + (i.quantity || 1), 0);
+  }
 
-function getCartCount() {
-  return 0;
-}
-
-function updateCartBadge() {
-  // Cart badge removed. Wishlist badge uses localStorage.merchCart.
-  const wishlist = loadLocal('merchCart', []);
-  const count = wishlist.reduce((s, i) => s + (i.quantity || 1), 0);
   document.querySelectorAll('.wishlist-count, #wishlist-count').forEach(el => {
     el.textContent = count;
     el.style.display = count > 0 ? 'inline-flex' : 'none';
   });
 }
 
-function addToCart(btn) {
-  // Cart disabled. Route "Add" action to wishlist instead.
+// Called from product card "Add to Wishlist" button
+async function addToCart(btn) {
   if (btn.disabled) return;
 
-  const card  = btn.closest('.product-card');
-  const id    = card.dataset.id;
-  const title = card.querySelector('.product-title')?.textContent.trim() || 'Item';
+  const card     = btn.closest('.product-card');
+  const id       = card.dataset.id;
+  const title    = card.querySelector('.product-title')?.textContent.trim() || 'Item';
   const priceRaw = card.querySelector('.product-price')?.textContent.trim() || 'KES 0';
-  const price = parseFloat(priceRaw.replace(/[^0-9.]/g, '')) || 0;
-  const seller = card.querySelector('.seller-name')?.textContent.trim() || 'MerchMarket';
+  const price    = parseFloat(priceRaw.replace(/[^0-9.]/g, '')) || 0;
+  const seller   = card.querySelector('.seller-name')?.textContent.trim() || 'MerchMarket';
   const imageSrc = card.querySelector('img')?.src || '';
-  const stock = parseInt(card.dataset.stock) || 999;
+  const stock    = parseInt(card.dataset.stock) || 999;
 
   if (stock === 0) { showToast('Out of stock!', 'error'); return; }
 
-  const cartId = id.startsWith('inv-') ? id : 'static-' + title.toLowerCase().replace(/\s+/g, '-');
+  const user = await getCurrentUser();
 
-  // Use merchCart localStorage as wishlist storage (existing wishlist.js expects this).
-  let wishlist = loadLocal('merchCart', []);
-  const existing = wishlist.find(i => i.id === cartId);
-  if (existing) {
-    existing.quantity++;
-  } else {
-    wishlist.push({ id: cartId, name: title, price, seller, quantity: 1, image: imageSrc });
-  }
-  saveLocal('merchCart', wishlist);
-
-  // Update wishlist badge if present
-  const badge = document.getElementById('wishlist-count');
-  if (badge) {
-    const count = wishlist.reduce((s, i) => s + (i.quantity || 1), 0);
-    badge.textContent = count;
-    badge.style.display = count > 0 ? 'inline-flex' : 'none';
-  }
-
-  showToast(`${title} added to wishlist!`, 'success');
-}
-
-
-function addToCartById(itemId) {
-  // Cart disabled. Route to wishlist instead.
-  const item = currentProducts.find(p => p.id === itemId);
-  if (!item) {
-    showToast('Product not found', 'error');
+  if (!user) {
+    // Guest: use localStorage
+    let wishlist = loadLocal('mm_wishlist_guest', []);
+    const existing = wishlist.find(i => i.product_id === id);
+    if (existing) existing.quantity++;
+    else wishlist.push({ product_id: id, name: title, price, seller, quantity: 1, image: imageSrc });
+    saveLocal('mm_wishlist_guest', wishlist);
+    showToast(`${title} added to wishlist!`, 'success');
+    updateCartBadge();
     return;
   }
 
-  let wishlist = loadLocal('merchCart', []);
-  const existing = wishlist.find(c => c.id === 'inv-' + itemId);
+  // Authenticated: upsert into Supabase
+  const { data: existing } = await db
+    .from('wishlists')
+    .select('id, quantity')
+    .eq('user_id', user.id)
+    .eq('product_id', id)
+    .maybeSingle();
+
   if (existing) {
-    existing.quantity++;
+    await db.from('wishlists').update({ quantity: existing.quantity + 1 }).eq('id', existing.id);
   } else {
-    wishlist.push({
-      id: 'inv-' + itemId,
-      name: item.name,
-      price: item.price,
-      seller: item.seller,
-      quantity: 1,
-      image: item.images && item.images.length > 0 ? item.images[0].url || item.images[0] : ''
-    });
+    await db.from('wishlists').insert({ user_id: user.id, product_id: id, quantity: 1 });
   }
 
-  saveLocal('merchCart', wishlist);
-
-  const badge = document.getElementById('wishlist-count');
-  if (badge) {
-    const count = wishlist.reduce((s, i) => s + (i.quantity || 1), 0);
-    badge.textContent = count;
-    badge.style.display = count > 0 ? 'inline-flex' : 'none';
-  }
-
-  showToast(`${item.name} added to wishlist!`, 'success');
+  showToast(`${title} added to wishlist!`, 'success');
+  updateCartBadge();
 }
 
+// Called from product detail / modal (uses product id directly)
+async function addToCartById(productId) {
+  const product = currentProducts.find(p => p.id === productId);
+  if (!product) { showToast('Product not found', 'error'); return; }
+
+  const user = await getCurrentUser();
+  const imageSrc = product.images?.[0]?.url || product.images?.[0] || '';
+
+  if (!user) {
+    let wishlist = loadLocal('mm_wishlist_guest', []);
+    const existing = wishlist.find(i => i.product_id === productId);
+    if (existing) existing.quantity++;
+    else wishlist.push({ product_id: productId, name: product.name, price: product.price, seller: product.seller, quantity: 1, image: imageSrc });
+    saveLocal('mm_wishlist_guest', wishlist);
+    showToast(`${product.name} added to wishlist!`, 'success');
+    updateCartBadge();
+    return;
+  }
+
+  const { data: existing } = await db
+    .from('wishlists')
+    .select('id, quantity')
+    .eq('user_id', user.id)
+    .eq('product_id', productId)
+    .maybeSingle();
+
+  if (existing) {
+    await db.from('wishlists').update({ quantity: existing.quantity + 1 }).eq('id', existing.id);
+  } else {
+    await db.from('wishlists').insert({ user_id: user.id, product_id: productId, quantity: 1 });
+  }
+
+  showToast(`${product.name} added to wishlist!`, 'success');
+  updateCartBadge();
+}
 
 /* ─── GLOBAL PRODUCT CATALOG ───────────────────────────────── */
+// Products are stored in Supabase `products` table. Schema expected:
+//   id, brand_id, name, price, seller, category, wear_category,
+//   item_type, condition, tags (jsonb), images (jsonb), stock,
+//   badge, sku, gradient, created_at
 
-const CATALOG_KEY = 'merchProducts';
 const GRADIENTS = [
   'linear-gradient(135deg,#667eea,#764ba2)',
   'linear-gradient(135deg,#f093fb,#f5576c)',
@@ -285,160 +354,171 @@ function getGradientForId(id) {
   return GRADIENTS[Math.abs(hash) % GRADIENTS.length];
 }
 
-function normalizeItemForCatalog(item, brand) {
-  const stock = typeof item.stock === 'number' ? item.stock : 999;
-  const images = Array.isArray(item.images)
-    ? item.images.map(img => typeof img === 'string' ? { url: img } : (img?.url ? img : null)).filter(Boolean)
+// Normalise a raw Supabase products row into the shape the renderer expects
+function normalizeProduct(row) {
+  const images = Array.isArray(row.images)
+    ? row.images.map(img => typeof img === 'string' ? { url: img } : (img?.url ? img : null)).filter(Boolean)
     : [];
+
+  const stock = row.stock != null ? row.stock : 999;
+
   return {
-    id: `${brand.id}-inv-${item.id}`,
-    rawId: item.id,
-    brandId: brand.id,
-    name: item.name || 'Untitled Product',
-    price: parseFloat(item.price) || 0,
-    seller: brand.name || 'Unknown Brand',
-    category: item.category || 'other',
-    condition: item.condition || 'new',
-    tags: Array.isArray(item.tags) ? item.tags : [],
-    gradient: item.gradient || getGradientForId(item.id),
-    images: images,
-    stock: stock,
-    badge: stock === 0 ? 'Out of Stock' : (item.badge || ''),
-    sku: item.sku || '',
-    createdAt: item.createdAt || new Date().toISOString()
+    id: row.id,
+    brandId: row.brand_id,
+    name: row.name || 'Untitled Product',
+    price: parseFloat(row.price) || 0,
+    seller: row.seller || 'Unknown Brand',
+    category: row.category || 'other',
+    wearCategory: row.wear_category || row.category || 'other',
+    itemType: row.item_type || row.type || 'other',
+    condition: row.condition || 'new',
+    tags: Array.isArray(row.tags) ? row.tags : [],
+    gradient: row.gradient || getGradientForId(String(row.id)),
+    images,
+    stock,
+    badge: stock === 0 ? 'Out of Stock' : (row.badge || ''),
+    sku: row.sku || '',
+    createdAt: row.created_at || new Date().toISOString()
   };
 }
 
-function rebuildCatalogFromAllBrands() {
-  try {
-    users = loadLocal('merchUsers', []);
-    let catalog = [...loadStaticProducts()];
-    users.filter(u => u.type === 'brand').forEach(brand => {
-      try {
-        const inv = loadLocal(`merchInventory_${brand.id}`, []);
-        inv.forEach(item => {
-          const normalized = normalizeItemForCatalog(item, brand);
-          catalog.push(normalized);
-        });
-      } catch (e) {
-        console.error(`Error loading inventory for brand ${brand.id}:`, e);
-      }
-    });
-    saveLocal(CATALOG_KEY, catalog);
-    return catalog;
-  } catch (e) {
-    console.error('Error rebuilding catalog:', e);
-    return loadLocal(CATALOG_KEY, loadStaticProducts());
+// Fetch all in-stock products from Supabase
+async function fetchAllProducts() {
+  const { data, error } = await db
+    .from('products')
+    .select('*')
+    .gt('stock', 0)          // only in-stock
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('fetchAllProducts error:', error.message);
+    return [];
   }
+
+  return data.map(normalizeProduct);
 }
-
-function syncBrandToCatalog(brandId) {
-  // Marketplace-side product uploading disabled.
-  // Inventory updates should only come from Brand Admin (brandflow).
-  // Keeping this function as a no-op prevents marketplace listing from creating/pushing new products.
-  console.log(`Marketplace uploads disabled - ignoring syncBrandToCatalog(${brandId})`);
-}
-
-
 
 /* ─── MARKETPLACE ──────────────────────────────────────────── */
 
-function loadStaticProducts() {
-  // Static products removed.
-  // (Keeps function to avoid runtime errors.)
-  return [];
-}
-
-
-
-let STATIC_PRODUCTS = [];
 let currentProducts = [];
 let searchQuery = '';
+let activeWearCategory = 'all';
+let activeItemType     = 'all';
 
-function initMarketplace() {
-  console.log('=== initMarketplace START ===');
-  users = loadLocal('merchUsers', []);
-  STATIC_PRODUCTS = loadStaticProducts();
-
-  // Always rebuild catalog to ensure brand inventory is included
-  // (not just when empty - brands may have added products since last load)
-  let catalog = rebuildCatalogFromAllBrands();
-
-  // Filter to products with stock > 0
-  currentProducts = catalog.filter(item => {
-    const stock = item.stock != null ? item.stock : 999;
-    return stock > 0;
+function updateWearTabUI() {
+  const container = document.getElementById('marketplaceWearTabs');
+  if (!container) return;
+  container.querySelectorAll('.filter-tab').forEach(btn => {
+    const label = btn.textContent.trim().toLowerCase();
+    const key = label === 'official wear' ? 'official'
+              : label === 'street wear'   ? 'street'
+              : label === 'casual wear'   ? 'casual'
+              : 'all';
+    btn.classList.toggle('active', key === activeWearCategory);
   });
-  
-  console.log('Total catalog items:', catalog.length);
-  console.log('Total available products (stock > 0):', currentProducts.length);
+}
 
-  renderProductGrid(currentProducts);
-  
+function updateItemTabUI() {
+  const container = document.getElementById('marketplaceItemTabs');
+  if (!container) return;
+  const valid = ['torso', 'trunks', 'innies', 'shoes', 'socks'];
+  container.querySelectorAll('.filter-tab').forEach(btn => {
+    const label = btn.textContent.trim().toLowerCase();
+    const key = valid.includes(label) ? label : 'all';
+    btn.classList.toggle('active', key === activeItemType);
+  });
+}
+
+function setWearFilter(category) {
+  activeWearCategory = category || 'all';
+  updateWearTabUI();
+  renderProductGrid(applyFilters());
+}
+
+function setItemFilter(itemType) {
+  activeItemType = itemType || 'all';
+  updateItemTabUI();
+  renderProductGrid(applyFilters());
+}
+
+function normalizeLower(s) { return (s || '').toString().trim().toLowerCase(); }
+
+function applyFilters() {
+  const q = searchQuery;
+  return currentProducts.filter(product => {
+    const wear = normalizeLower(product.wearCategory);
+    const item = normalizeLower(product.itemType);
+
+    if (activeWearCategory !== 'all' && wear !== activeWearCategory) return false;
+    if (activeItemType !== 'all' && item !== activeItemType) return false;
+    if (!q) return true;
+
+    return normalizeLower(product.name).includes(q)
+        || normalizeLower(product.seller).includes(q);
+  });
+}
+
+async function initMarketplace() {
+  console.log('=== initMarketplace START ===');
+
+  currentProducts = await fetchAllProducts();
+
+  console.log('Total available products:', currentProducts.length);
+
+  activeWearCategory = 'all';
+  activeItemType     = 'all';
+  updateWearTabUI();
+  updateItemTabUI();
+  renderProductGrid(applyFilters());
+
+  // Subscribe to real-time product changes
+  subscribeToProductChanges();
+
   console.log('=== initMarketplace END ===');
 }
 
 function searchProducts() {
   searchQuery = document.getElementById('searchInput')?.value.trim().toLowerCase() || '';
-  
-  // Filter currentProducts array instead of DOM manipulation
-  const filtered = currentProducts.filter(product => {
-    if (!searchQuery) return true;
-    const name = (product.name || '').toLowerCase();
-    const seller = (product.seller || '').toLowerCase();
-    return name.includes(searchQuery) || seller.includes(searchQuery);
-  });
-  
-  // Re-render with filtered results
-  renderProductGrid(filtered);
+  renderProductGrid(applyFilters());
 }
 
 function renderProductGrid(products) {
   console.log('Rendering', products.length, 'products');
   const grid = document.getElementById('productGrid');
-  if (!grid) {
-    console.error('Product grid not found');
-    return;
-  }
+  if (!grid) { console.error('Product grid not found'); return; }
 
   if (products.length === 0) {
-    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:4rem;color:#a0a0a0;">
-      <div style="font-size:3rem;margin-bottom:1rem;">🔍</div>
-      <p>No products found. Try a different search or filter.</p>
-    </div>`;
+    grid.innerHTML = `
+      <div style="grid-column:1/-1;text-align:center;padding:4rem;color:#a0a0a0;">
+        <div style="font-size:3rem;margin-bottom:1rem;">🔍</div>
+        <p>No products found. Try a different search or filter.</p>
+      </div>`;
     return;
   }
 
-  const countEl = document.querySelector('.results-count strong');
-  if (countEl) countEl.textContent = products.length;
+  const resultsEl = document.querySelector('.results-count');
+  if (resultsEl) resultsEl.innerHTML = `Showing <strong>${products.length}</strong> results`;
 
   grid.innerHTML = products.map(p => {
-    const stockBadge = p.stock < 5 ? `<div class="product-badge">${p.stock} left</div>` : '';
-    const addBtnText = p.stock === 0 ? 'Out of Stock' : 'Add to Wishlist';
+    const stockBadge  = p.stock < 5 ? `<div class="product-badge">${p.stock} left</div>` : '';
+    const addBtnText  = p.stock === 0 ? 'Out of Stock' : 'Add to Wishlist';
     const addBtnDisabled = p.stock === 0 ? 'disabled style="opacity:.6;cursor:not-allowed"' : '';
-    // Route button action to wishlist (function addToCart already does this in this project)
-    const addBtnFn = 'addToCart(this)';
-    
-    let imageSrc = '';
-    if (p.images && p.images.length > 0) {
-      const firstImg = p.images[0];
-      imageSrc = typeof firstImg === 'string' ? firstImg : (firstImg?.url || '');
-    }
-    const imageHtml = imageSrc 
+    const imageSrc    = p.images?.[0]?.url || '';
+    const imageHtml   = imageSrc
       ? `<img src="${imageSrc}" alt="${p.name}" style="width:100%;height:100%;object-fit:cover;border-radius:8px 8px 0 0;">`
       : `<div class="image-placeholder" style="width:100%;height:100%;background:linear-gradient(45deg,#ccc,#ddd);border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:center;color:#666;font-size:1.2rem;">No Image</div>`;
 
     return `
-      <div class="product-card" data-id="${p.id}" data-stock="${p.stock || 999}">
-        <div class="product-image" style="background:${p.gradient || '#1e1e1e'};border-radius:12px 12px 0 0;overflow:hidden;">
+      <div class="product-card" data-id="${p.id}" data-stock="${p.stock}">
+        <div class="product-image" style="background:${p.gradient};border-radius:12px 12px 0 0;overflow:hidden;">
           ${imageHtml}
           ${p.badge && p.badge.toLowerCase() !== 'new' ? `<div class="product-badge">${p.badge}</div>` : ''}
           ${stockBadge}
           <button class="wishlist-btn" onclick="toggleWishlist(this)">♡</button>
         </div>
-      <div class="product-details">
+        <div class="product-details">
           <div class="product-seller">
-            <div class="seller-badge" style="background:${p.gradient || 'var(--gradient-1)'}"></div>
+            <div class="seller-badge" style="background:${p.gradient}"></div>
             <span class="seller-name">${p.seller}</span>
           </div>
           <h3 class="product-title">${p.name}</h3>
@@ -448,13 +528,8 @@ function renderProductGrid(products) {
             <button class="add-to-cart-btn" onclick="addToCart(this)" ${addBtnDisabled}>${addBtnText}</button>
           </div>
         </div>
-      </div>
-    `;
+      </div>`;
   }).join('');
-
-  // Update results count after render
-  const resultsCount = document.querySelector('.results-count');
-  if (resultsCount) resultsCount.innerHTML = `Showing <strong>${products.length}</strong> results`;
 }
 
 function toggleWishlist(btn) {
@@ -463,17 +538,13 @@ function toggleWishlist(btn) {
   showToast(btn.classList.contains('active') ? 'Added to wishlist!' : 'Removed from wishlist', 'info');
 }
 
-function initAdmin() {
-  if (typeof tabSwitch === 'function') tabSwitch('orders');
-}
-
 /* ─── SOCIAL FEED ─────────────────────────────────────────── */
 
 function toggleFollow(btn) {
   const isFollowing = btn.classList.toggle('following');
   btn.textContent = isFollowing ? 'Following' : 'Follow';
   btn.style.borderColor = isFollowing ? '#c47d2e' : '';
-  btn.style.color = isFollowing ? '#ffd8b5' : '';
+  btn.style.color       = isFollowing ? '#ffd8b5' : '';
   showToast(isFollowing ? 'Now following!' : 'Unfollowed', 'info');
 }
 
@@ -481,18 +552,9 @@ function toggleLike(el) {
   const countSpan = el.querySelector('.like-count');
   let count = parseFloat(countSpan.textContent) || 0;
   const isK = countSpan.textContent.includes('K');
-  if (el.classList.toggle('liked')) {
-    el.style.color = '#ff3366';
-    count += 0.1;
-  } else {
-    el.style.color = '';
-    count -= 0.1;
-  }
-  if (isK) {
-    countSpan.textContent = count.toFixed(1) + 'K';
-  } else {
-    countSpan.textContent = Math.round(count);
-  }
+  if (el.classList.toggle('liked')) { el.style.color = '#ff3366'; count += 0.1; }
+  else                              { el.style.color = '';        count -= 0.1; }
+  countSpan.textContent = isK ? count.toFixed(1) + 'K' : Math.round(count);
 }
 
 function loadMore() {
@@ -501,47 +563,61 @@ function loadMore() {
 }
 
 /* ─── ORDERS ──────────────────────────────────────────────── */
+// Orders live in the Supabase `orders` table:
+//   id, user_id, items (jsonb), total, status, location, created_at
 
-function renderMemberOrders() {
+async function renderMemberOrders() {
   const tbody = document.getElementById('orders-body');
   if (!tbody) return;
 
-  const user = getCurrentUser();
-  let orders = [];
-  if (user) {
-    const allKeys = Object.keys(localStorage).filter(k => k.startsWith('merchOrders_'));
-    allKeys.forEach(key => {
-      const brandOrders = loadLocal(key, []);
-      brandOrders.forEach(o => {
-        if (o.customer && o.customer.email === user.email) {
-          orders.push(o);
-        }
-      });
-    });
-  }
+  const user = await getCurrentUser();
+  if (!user) return;
 
-  if (orders.length === 0) {
-    // Keep static fallback rows if no real orders
-    return;
-  }
+  const { data: orders, error } = await db
+    .from('orders')
+    .select('*, order_items(*, products(name, sku))')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false });
 
+  if (error) { console.error('renderMemberOrders error:', error.message); return; }
+  if (!orders || orders.length === 0) return;
+
+  // Remove any static fallback rows
   document.querySelectorAll('.static-fallback').forEach(r => r.remove());
 
   tbody.innerHTML += orders.map(o => {
-    const totalNum = parseInt(o.total?.replace(/,/g, '') || 0);
     const statusClass = o.status || 'pending';
+    const items = o.order_items || [];
+
+    const productCell = items.length
+      ? items.map(i => {
+          const name = i.products?.name || i.sku || '—';
+          return `${name}<br><span style="opacity:.75;font-size:.85rem;">Qty: ${i.quantity || 1}</span>`;
+        }).join('<div style="margin-top:.35rem;">')
+      : '—';
+
+    const qtyCell = items.length
+      ? items.map(i => String(i.quantity || 1)).join(' + ')
+      : '1';
+
+    const total = parseFloat(o.total) || 0;
+    const date  = o.created_at ? new Date(o.created_at).toLocaleDateString('en-KE') : '—';
+
     return `
       <tr>
         <td style="font-family:monospace;color:#ffd8b5;">#${o.id}</td>
-        <td>${o.item}</td>
-        <td>1</td>
+        <td>${productCell}</td>
+        <td>${qtyCell}</td>
         <td style="font-size:.85rem;color:#a0a0a0;">${o.location || 'Nairobi, Kenya'}</td>
-        <td style="font-size:.85rem;color:#a0a0a0;">${o.dateOrdered}</td>
+        <td style="font-size:.85rem;color:#a0a0a0;">${date}</td>
         <td><span class="status-badge ${statusClass}">${statusClass.charAt(0).toUpperCase() + statusClass.slice(1)}</span></td>
-        <td><strong>KES ${totalNum.toLocaleString()}</strong></td>
-      </tr>
-    `;
+        <td><strong>KES ${total.toLocaleString()}</strong></td>
+      </tr>`;
   }).join('');
+}
+
+function initAdmin() {
+  if (typeof tabSwitch === 'function') tabSwitch('orders');
 }
 
 function showSellModal() {
@@ -561,47 +637,48 @@ function submitListing(e) {
   showToast('Marketplace uploads are disabled.', 'error');
 }
 
-
-
 /* ─── BOOT ─────────────────────────────────────────────────── */
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   updateCartBadge();
-  
+
   const page = window.location.pathname.split('/').pop() || 'index.html';
 
   if (page.includes('marketplace.html')) {
-    console.log('Marketplace page detected - initializing...');
-    initMarketplace();
-    // Marketplace-side upload/listing modal disabled.
-    // (No sellModal wiring)
+    console.log('Marketplace page detected — initializing...');
+    await initMarketplace();
   }
 
-  // Other page inits...
   if (page.includes('brandflow')) initAdmin();
-  
-  // Auth forms
+
+  // Auth: login form
   const loginForm = document.querySelector('.login-form');
   if (loginForm) {
-    loginForm.addEventListener('submit', e => {
+    loginForm.addEventListener('submit', async e => {
       e.preventDefault();
-      const email = document.getElementById('login-email')?.value.trim() || document.getElementById('username')?.value.trim();
-      const password = document.getElementById('login-password')?.value || document.getElementById('password')?.value;
-      login(email, password);
+      const email    = document.getElementById('login-email')?.value.trim()
+                    || document.getElementById('username')?.value.trim();
+      const password = document.getElementById('login-password')?.value
+                    || document.getElementById('password')?.value;
+      await login(email, password);
     });
   }
 
+  // Auth: signup form
   const signupForm = document.querySelector('.signup-form');
   if (signupForm) {
-    signupForm.addEventListener('submit', e => {
+    signupForm.addEventListener('submit', async e => {
       e.preventDefault();
-      const type = document.body.dataset.userType || 'member';
-      const name = document.getElementById('brandName')?.value.trim() || document.getElementById('fullName')?.value.trim();
-      const email = document.getElementById('email')?.value.trim();
+      const type     = document.body.dataset.userType || 'member';
+      const name     = document.getElementById('brandName')?.value.trim()
+                    || document.getElementById('fullName')?.value.trim();
+      const email    = document.getElementById('email')?.value.trim();
       const password = document.getElementById('password')?.value;
-      const confirm = document.getElementById('confirmPassword')?.value;
-      if (password !== confirm) return showToast("Passwords don't match", 'error');
-      const user = createAccount(type, name, email, password);
+      const confirm  = document.getElementById('confirmPassword')?.value;
+
+      if (password !== confirm) { showToast("Passwords don't match", 'error'); return; }
+
+      const user = await createAccount(type, name, email, password);
       if (user) window.location.href = type === 'brand' ? 'authbrand.html' : 'marketplace.html';
     });
   }

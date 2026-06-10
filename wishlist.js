@@ -1,17 +1,39 @@
 /* ========================================
-   MERCHMARKET — WISHLIST PAGE JS
-   - Uses localStorage.merchCart as wishlist source
-   - Displays vendor (brand) preferred payment details
-   - Does NOT take payment on the site
-   - Creates orders (optional wire-up) without collecting payment
+   MERCHMARKET — WISHLIST PAGE JS (Supabase)
+   - Wishlist rows live in Supabase `wishlists` table
+   - Vendor payment details come from `vendor_payments` table
+   - Orders are written to `orders` + `order_items` tables
+   - No payment is collected on-site
    ======================================== */
 
 (function () {
-  const CART_KEY = 'merchCart';
 
-  // Wishlist badge sync (header counters)
-  function updateWishlistBadge() {
-    const count = loadCart().reduce((s, i) => s + (i.quantity || 1), 0);
+  /* ─── helpers ─────────────────────────────────────────────── */
+
+  function moneyKES(n) {
+    return 'KES ' + (Number(n) || 0).toFixed(0);
+  }
+
+  // `db` is the global Supabase client initialised in main.js
+  // (const db = createClient(SUPABASE_URL, SUPABASE_KEY))
+
+  /* ─── wishlist badge ───────────────────────────────────────── */
+
+  async function updateWishlistBadge() {
+    const user = await getCurrentUser();
+    let count = 0;
+
+    if (user) {
+      const { data } = await db
+        .from('wishlists')
+        .select('quantity')
+        .eq('user_id', user.id);
+      count = (data || []).reduce((s, i) => s + (i.quantity || 1), 0);
+    } else {
+      const local = loadLocal('mm_wishlist_guest', []);
+      count = local.reduce((s, i) => s + (i.quantity || 1), 0);
+    }
+
     const badge = document.getElementById('wishlist-count');
     if (badge) {
       badge.textContent = count;
@@ -19,164 +41,180 @@
     }
   }
 
+  /* ─── load wishlist ────────────────────────────────────────── */
 
-  // In-memory "separate database": do NOT persist merchant payment details in localStorage.
-  // For now this page supports the existing cart (stored in localStorage) but pulls payment
-  // profile from a separate JSON "database" file when available.
-  //
-  // Because browser code cannot read arbitrary files via file:// reliably,
-  // we fallback to window.__MMVendorPayments if merchmarket.js provided it.
-  // If neither exists, UI shows "Not provided".
+  async function loadWishlist() {
+    const user = await getCurrentUser();
 
-  function safeParse(json, fallback) {
-    try {
-      const v = JSON.parse(json);
-      return v ?? fallback;
-    } catch {
-      return fallback;
+    if (!user) {
+      // Guest: read from localStorage session fallback
+      return loadLocal('mm_wishlist_guest', []);
     }
-  }
 
-  function loadCartSyncFallback() {
-    try {
-      return safeParse(localStorage.getItem(CART_KEY), []);
-    } catch {
+    const { data, error } = await db
+      .from('wishlists')
+      .select(`
+        id,
+        quantity,
+        products (
+          id, name, price, seller, images, sku
+        )
+      `)
+      .eq('user_id', user.id);
+
+    if (error) {
+      console.error('loadWishlist error:', error.message);
       return [];
     }
+
+    // Flatten into a shape the renderer can use
+    return (data || []).map(row => ({
+      _wishlistRowId: row.id,
+      id: row.products?.id,
+      name: row.products?.name || 'Unknown',
+      price: parseFloat(row.products?.price) || 0,
+      seller: row.products?.seller || 'MerchMarket',
+      quantity: row.quantity || 1,
+      sku: row.products?.sku || '',
+      image: row.products?.images?.[0]?.url || row.products?.images?.[0] || ''
+    }));
   }
 
-  function loadCart() {
-    // Source of truth: localStorage (sync)
-    return loadCartSyncFallback();
+  /* ─── vendor payment details ───────────────────────────────── */
+  // Reads from Supabase `vendor_payments` table:
+  //   brand_id (uuid), method, details (jsonb), updated_at
+
+  async function getVendorPaymentProfile(brandId) {
+    if (!brandId) return null;
+
+    const { data, error } = await db
+      .from('vendor_payments')
+      .select('*')
+      .eq('brand_id', brandId)
+      .maybeSingle();
+
+    if (error) { console.error('getVendorPaymentProfile error:', error.message); return null; }
+    return data || null;
   }
 
+  // Returns a map of { [seller name]: brand_id } from `profiles` table
+  async function getCatalogBrandMap() {
+    const { data, error } = await db
+      .from('profiles')
+      .select('id, name')
+      .eq('type', 'brand');
 
+    if (error) { console.error('getCatalogBrandMap error:', error.message); return {}; }
 
-  // Vendor payment database (separate from localStorage)
-  // Wishlist tries to load vendor-payments-db.json into window.__MMVendorPayments.
-  // Expected shape:
-  // {
-  //   [brandId]: { method: 'mpesa'|'bank'|'paypal'|'cash', details: {...}, updatedAt: '...' }
-  // }
-  function getVendorPaymentProfile(brandId) {
-    const db = window.__MMVendorPayments;
-    if (!db) return null;
-    return db[String(brandId)] || null;
-  }
-
-  function getCatalogBrandMap() {
-    // seller name -> brandId
-    const users = typeof loadLocal === 'function' ? loadLocal('merchUsers', []) : [];
     const map = {};
-    users.filter(u => u.type === 'brand').forEach(b => {
-      map[b.name] = b.id;
-    });
+    (data || []).forEach(b => { map[b.name] = b.id; });
     return map;
   }
 
-  function moneyKES(n) {
-    const num = Number(n) || 0;
-    return 'KES ' + num.toFixed(0);
-  }
+  /* ─── render ───────────────────────────────────────────────── */
 
-  function createWishlistItemRow(item, idx) {
+  function createWishlistItemRow(item, rowId) {
     const thumb = item.image
       ? `<img src="${item.image}" style="width:100%;height:100%;object-fit:cover;" />`
       : '';
 
     return `
-      <div class="wishlist-item" data-cart-index="${idx}">
-        <div class="item-thumb">${thumb || ''}</div>
+      <div class="wishlist-item" data-wishlist-row="${rowId}">
+        <div class="item-thumb">${thumb}</div>
         <div>
           <div class="item-name">${item.name}</div>
           <div class="item-sub">Qty: ${item.quantity}</div>
         </div>
         <div class="item-right">${moneyKES(item.price * item.quantity)}</div>
-        <button class="remove-btn" onclick="removeWishlistItem(${idx})" title="Remove">×</button>
+        <button class="remove-btn" onclick="removeWishlistItem('${rowId}')" title="Remove">×</button>
       </div>
     `;
   }
 
-  function render() {
-    const cart = loadCart();
-    const emptyEl = document.getElementById('wishlist-empty');
+  async function render() {
+    const emptyEl   = document.getElementById('wishlist-empty');
     const vendorsEl = document.getElementById('wishlist-vendors');
 
-    const totalItems = cart.reduce((s, i) => s + (i.quantity || 1), 0);
+    const cart = await loadWishlist();
+
     if (!cart.length) {
-      if (emptyEl) emptyEl.style.display = 'block';
+      if (emptyEl)   emptyEl.style.display = 'block';
       if (vendorsEl) vendorsEl.innerHTML = '';
+      updateWishlistBadge();
       return;
     }
 
     if (emptyEl) emptyEl.style.display = 'none';
 
+    const brandMap = await getCatalogBrandMap();
+
+    // Group items by seller
     const bySeller = {};
-    cart.forEach((item, idx) => {
+    cart.forEach(item => {
       const seller = item.seller || 'MerchMarket';
       if (!bySeller[seller]) bySeller[seller] = [];
-      bySeller[seller].push({ ...item, _cartIndex: idx });
+      bySeller[seller].push(item);
     });
 
-    const brandMap = getCatalogBrandMap();
+    const vendorBlocks = await Promise.all(
+      Object.entries(bySeller).map(async ([seller, items]) => {
+        const brandId  = brandMap[seller] ?? null;
+        const subtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
+        const payment  = brandId ? await getVendorPaymentProfile(brandId) : null;
+        const method   = payment?.method || '';
+        const details  = payment?.details || null;
 
-    const vendorBlocks = Object.entries(bySeller).map(([seller, items]) => {
-      const brandId = brandMap[seller];
+        const blockId = `vendor-${String(brandId ?? seller).replace(/[^a-zA-Z0-9_-]/g, '')}`;
 
-      const blockId = `vendor-${String(brandId ?? seller).replace(/[^a-zA-Z0-9_-]/g, '')}`;
-      const firstItem = items[0];
-      const subtotal = items.reduce((s, i) => s + (i.price * i.quantity), 0);
+        const preview = payment
+          ? `<div class="pay-notice" style="margin-top:.25rem;">${method || 'Payment method'}${details?.phone ? ' • ' + details.phone : ''}</div>`
+          : `<div class="pay-notice" style="margin-top:.25rem;">Not provided yet</div>`;
 
-      const payment = brandId ? getVendorPaymentProfile(brandId) : null;
-      const method = payment?.method || '';
-      const details = payment?.details || null;
+        const itemsHtml = items
+          .map(it => createWishlistItemRow(it, it._wishlistRowId ?? it.id))
+          .join('');
 
-      // Lightweight preview
-      const preview = payment
-        ? `<div class="pay-notice" style="margin-top:.25rem;">${method || 'Payment method'}${details?.phone ? ' • ' + details.phone : ''}</div>`
-        : `<div class="pay-notice" style="margin-top:.25rem;">Not provided yet</div>`;
-
-      const itemsHtml = items
-        .map((it) => createWishlistItemRow(it, it._cartIndex))
-        .join('');
-
-      return `
-        <div class="vendor-block" >
-          <div class="vendor-header">
-            <div>
-              <div class="vendor-name">${seller}</div>
-              <div class="vendor-meta">${items.length} item types • ${moneyKES(subtotal)}</div>
+        return `
+          <div class="vendor-block">
+            <div class="vendor-header">
+              <div>
+                <div class="vendor-name">${seller}</div>
+                <div class="vendor-meta">${items.length} item type${items.length !== 1 ? 's' : ''} • ${moneyKES(subtotal)}</div>
+              </div>
+              <button class="action-btn" style="margin-left:auto;"
+                onclick="selectVendor('${blockId}', '${brandId ?? ''}')">
+                View payment
+              </button>
             </div>
-            <button class="action-btn" style="margin-left:auto;" onclick="selectVendor('${blockId}', ${JSON.stringify(brandId ?? null)})">View payment</button>
-          </div>
-          <div style="background:rgba(255,255,255,.03);border:1px solid rgba(170,111,2,.18);border-radius:14px;padding:.9rem;">
-            <div style="max-height:240px;overflow:auto;">
-              ${itemsHtml}
+            <div style="background:rgba(255,255,255,.03);border:1px solid rgba(170,111,2,.18);border-radius:14px;padding:.9rem;">
+              <div style="max-height:240px;overflow:auto;">
+                ${itemsHtml}
+              </div>
+            </div>
+            <div style="margin-top:.6rem;padding-left:.2rem;">
+              ${preview}
             </div>
           </div>
-          <div style="margin-top:.6rem; padding-left:.2rem;">
-            ${preview}
-          </div>
-        </div>
-      `;
-    }).join('');
+        `;
+      })
+    );
 
-    vendorsEl.innerHTML = vendorBlocks;
+    if (vendorsEl) vendorsEl.innerHTML = vendorBlocks.join('');
+    updateWishlistBadge();
   }
 
-  // Selected vendor panel
-  function selectVendor(vendorBlockId, brandId) {
+  /* ─── vendor payment panel ─────────────────────────────────── */
+
+  window.selectVendor = async function selectVendor(vendorBlockId, brandId) {
     const panel = document.getElementById('wishlist-payment-details');
     if (!panel) return;
 
     if (!brandId) {
-      panel.innerHTML = `
-        <div class="pay-notice">Vendor payment details are not available (vendor not registered).</div>
-      `;
+      panel.innerHTML = `<div class="pay-notice">Vendor payment details are not available (vendor not registered).</div>`;
       return;
     }
 
-    const profile = getVendorPaymentProfile(brandId);
+    const profile = await getVendorPaymentProfile(brandId);
 
     if (!profile) {
       panel.innerHTML = `
@@ -187,65 +225,75 @@
     }
 
     const method = profile.method || 'Preferred payment';
-    const d = profile.details || {};
+    const d      = profile.details || {};
+    const rows   = [];
 
-    const detailsRows = [];
-    if (d.phone) detailsRows.push(`<div class="pay-row"><span>Phone</span><span class="pay-val">${d.phone}</span></div>`);
-    if (d.bankName) detailsRows.push(`<div class="pay-row"><span>Bank</span><span class="pay-val">${d.bankName}</span></div>`);
-    if (d.accountName) detailsRows.push(`<div class="pay-row"><span>Account name</span><span class="pay-val">${d.accountName}</span></div>`);
-    if (d.accountNumber) detailsRows.push(`<div class="pay-row"><span>Account number</span><span class="pay-val">${d.accountNumber}</span></div>`);
-    if (d.email) detailsRows.push(`<div class="pay-row"><span>Email</span><span class="pay-val">${d.email}</span></div>`);
-    if (d.mpesaShortcode) detailsRows.push(`<div class="pay-row"><span>Paybill/Shortcode</span><span class="pay-val">${d.mpesaShortcode}</span></div>`);
-    if (d.deliveryInstructions) detailsRows.push(`<div class="pay-row"><span>Instructions</span><span class="pay-val">${d.deliveryInstructions}</span></div>`);
+    if (d.phone)                rows.push(`<div class="pay-row"><span>Phone</span><span class="pay-val">${d.phone}</span></div>`);
+    if (d.bankName)             rows.push(`<div class="pay-row"><span>Bank</span><span class="pay-val">${d.bankName}</span></div>`);
+    if (d.accountName)          rows.push(`<div class="pay-row"><span>Account name</span><span class="pay-val">${d.accountName}</span></div>`);
+    if (d.accountNumber)        rows.push(`<div class="pay-row"><span>Account number</span><span class="pay-val">${d.accountNumber}</span></div>`);
+    if (d.email)                rows.push(`<div class="pay-row"><span>Email</span><span class="pay-val">${d.email}</span></div>`);
+    if (d.mpesaShortcode)       rows.push(`<div class="pay-row"><span>Paybill/Shortcode</span><span class="pay-val">${d.mpesaShortcode}</span></div>`);
+    if (d.deliveryInstructions) rows.push(`<div class="pay-row"><span>Instructions</span><span class="pay-val">${d.deliveryInstructions}</span></div>`);
 
     panel.innerHTML = `
       <div class="pay-method">
         <h3>${method}</h3>
-        ${detailsRows.length ? detailsRows.join('') : '<div class="pay-notice">No method details stored.</div>'}
-        <div class="pay-notice" style="margin-top:.7rem;">Updated: ${profile.updatedAt || '—'}</div>
+        ${rows.length ? rows.join('') : '<div class="pay-notice">No method details stored.</div>'}
+        <div class="pay-notice" style="margin-top:.7rem;">Updated: ${profile.updated_at ? new Date(profile.updated_at).toLocaleDateString('en-KE') : '—'}</div>
       </div>
     `;
-  }
-
-  // Remove from wishlist (cart)
-  window.removeWishlistItem = function removeWishlistItem(idx) {
-    const cart = loadCart();
-    if (!cart[idx]) return;
-    const name = cart[idx]?.name || 'Item';
-    cart.splice(idx, 1);
-
-    // Persist via MMStorage when available; fallback to localStorage.
-    try {
-      if (typeof saveLocal === 'function') {
-        saveLocal(CART_KEY, cart);
-      } else {
-        localStorage.setItem(CART_KEY, JSON.stringify(cart));
-      }
-    } catch {
-      localStorage.setItem(CART_KEY, JSON.stringify(cart));
-    }
-
-    render();
-    if (typeof showToast === 'function') showToast(`${name} removed from wishlist.`, 'info');
   };
 
+  /* ─── remove item ──────────────────────────────────────────── */
 
+  window.removeWishlistItem = async function removeWishlistItem(rowId) {
+    const user = await getCurrentUser();
 
-  // Place wishlist orders request (creates orders like cart checkout)
-  window.placeWishlistOrders = function placeWishlistOrders() {
-    const cart = loadCart();
-    if (!cart.length) return;
-
-    const user = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
     if (!user) {
-      if (typeof showToast === 'function') showToast('Please log in first.', 'error');
-      setTimeout(() => {
-        window.location.href = 'login.html';
-      }, 1200);
+      // Guest: splice from localStorage
+      let local = loadLocal('mm_wishlist_guest', []);
+      const idx = local.findIndex(i => String(i.id) === String(rowId));
+      const name = idx !== -1 ? local[idx].name : 'Item';
+      if (idx !== -1) local.splice(idx, 1);
+      saveLocal('mm_wishlist_guest', local);
+      if (typeof showToast === 'function') showToast(`${name} removed from wishlist.`, 'info');
+      render();
       return;
     }
 
-    // Group items by seller
+    // Authenticated: delete the wishlist row by its Supabase id
+    const { error } = await db
+      .from('wishlists')
+      .delete()
+      .eq('id', rowId)
+      .eq('user_id', user.id); // RLS safety check
+
+    if (error) {
+      console.error('removeWishlistItem error:', error.message);
+      if (typeof showToast === 'function') showToast('Could not remove item. Try again.', 'error');
+      return;
+    }
+
+    if (typeof showToast === 'function') showToast('Item removed from wishlist.', 'info');
+    render();
+  };
+
+  /* ─── place orders ─────────────────────────────────────────── */
+
+  window.placeWishlistOrders = async function placeWishlistOrders() {
+    const cart = await loadWishlist();
+    if (!cart.length) return;
+
+    const user = await getCurrentUser();
+    if (!user) {
+      if (typeof showToast === 'function') showToast('Please sign in to place an order.', 'error');
+      return;
+    }
+
+    const brandMap = await getCatalogBrandMap();
+
+    // Group by seller
     const bySeller = {};
     cart.forEach(item => {
       const seller = item.seller || 'MerchMarket';
@@ -253,80 +301,74 @@
       bySeller[seller].push(item);
     });
 
-    const users = typeof loadLocal === 'function' ? loadLocal('merchUsers', []) : [];
-    const brandMap = {};
-    users.filter(u => u.type === 'brand').forEach(b => { brandMap[b.name] = b.id; });
-
     let ordersCreated = 0;
-    Object.entries(bySeller).forEach(([seller, items]) => {
+
+    for (const [seller, items] of Object.entries(bySeller)) {
       const brandId = brandMap[seller];
-      if (!brandId) return;
+      if (!brandId) continue;
 
       const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-      const orderItems = items.map(i => {
-        const sku = (i.sku || i.itemSku || '').toString().trim() || (i.id || '').toString().trim();
-        const tracking = sku; // tracking = SKU
-        return { ...i, sku, tracking };
-      });
 
-      const order = {
-        id: `WISHLIST-${Date.now()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
-        customer: { name: user.name, email: user.email },
-        item: orderItems.map(i => `${i.tracking} (x${i.quantity})`).join(', '),
-        items: orderItems,
-        dateOrdered: new Date().toLocaleDateString(),
-        dateUpdated: new Date().toLocaleDateString(),
-        location: 'Nairobi, Kenya',
-        total: total.toFixed(0),
-        status: 'pending',
-        payment: {
-          // Snapshot reference only (no user payment taken here)
-          vendor: seller,
-          brandId,
-          note: 'Customer requested order. Vendor payment details shown in wishlist.'
-        }
-      };
+      // Insert the parent order row
+      const { data: orderData, error: orderError } = await db
+        .from('orders')
+        .insert({
+          user_id:    user.id,
+          brand_id:   brandId,
+          total:      total.toFixed(2),
+          status:     'pending',
+          location:   'Nairobi, Kenya',
+          created_at: new Date().toISOString()
+        })
+        .select('id')
+        .single();
 
-      const ordersKey = `merchOrders_${brandId}`;
-      const existing = typeof loadLocal === 'function' ? loadLocal(ordersKey, []) : [];
-      existing.push(order);
-      if (typeof saveLocal === 'function') saveLocal(ordersKey, existing);
+      if (orderError) {
+        console.error(`Order insert error for seller ${seller}:`, orderError.message);
+        continue;
+      }
+
+      // Insert order_items rows
+      const orderItems = items.map(i => ({
+        order_id:   orderData.id,
+        product_id: i.id,
+        quantity:   i.quantity,
+        sku:        i.sku || '',
+        unit_price: i.price
+      }));
+
+      const { error: itemsError } = await db.from('order_items').insert(orderItems);
+      if (itemsError) {
+        console.error(`order_items insert error for order ${orderData.id}:`, itemsError.message);
+      }
+
       ordersCreated++;
-    });
+    }
 
     if (ordersCreated === 0) {
       if (typeof showToast === 'function') showToast('No valid brand sellers found.', 'error');
       return;
     }
 
-    // Clear cart after placing wishlist orders
-    try {
-      if (typeof saveLocal === 'function') {
-        saveLocal(CART_KEY, []);
-      } else {
-        localStorage.setItem(CART_KEY, JSON.stringify([]));
-      }
-    } catch {
-      localStorage.setItem(CART_KEY, JSON.stringify([]));
-    }
+    // Clear wishlist after placing orders
+    const { error: clearError } = await db
+      .from('wishlists')
+      .delete()
+      .eq('user_id', user.id);
+
+    if (clearError) console.error('Clear wishlist error:', clearError.message);
+
     render();
 
-
     if (typeof showToast === 'function') showToast('Wishlist order request sent! ✅', 'success');
-    setTimeout(() => {
-      window.location.href = 'orders.html';
-    }, 1200);
+    setTimeout(() => { window.location.href = 'orders.html'; }, 1200);
   };
 
-  // Boot
+  /* ─── boot ─────────────────────────────────────────────────── */
+
   document.addEventListener('DOMContentLoaded', () => {
     render();
     updateWishlistBadge();
-
-
-    // select first vendor by default
-    // (if any vendor exists, use selectVendor later on user action)
   });
 
 })();
-
