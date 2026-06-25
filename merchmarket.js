@@ -171,13 +171,35 @@ async function login(email, password) {
   const { data, error } = await db.auth.signInWithPassword({ email, password });
 
   if (error) {
-    const msg = 'Invalid email or password.';
+    const raw = (error.message || '').toLowerCase();
+    const msg = raw.includes('email not confirmed')
+      ? 'Please confirm your email first. Check your inbox for the confirmation link.'
+      : (raw.includes('invalid login') || raw.includes('invalid credentials'))
+        ? 'Incorrect email or password.'
+        : error.message;
     showAuthError(msg);
     throw new Error(msg);
   }
 
   const profile = await fetchProfile(data.user.id);
   if (!profile) {
+    // Profile row missing — attempt to recover it from auth metadata
+    const meta = data.user.user_metadata || {};
+    if (meta.type && meta.name) {
+      await db.from('profiles').upsert({
+        id:         data.user.id,
+        name:       meta.name,
+        type:       meta.type,
+        email:      data.user.email,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+      const recovered = await fetchProfile(data.user.id);
+      if (recovered) {
+        window.location.href = recovered.type === 'brand' ? '/brandflow.html' : '/marketplace.html';
+        return { ...data.user, ...recovered };
+      }
+    }
     const msg = 'Account found but profile is missing. Contact support.';
     showAuthError(msg);
     throw new Error(msg);
