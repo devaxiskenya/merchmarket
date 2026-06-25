@@ -7,44 +7,131 @@
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="merchmarket.css">
   <style>
-    .login-container {
-      background: rgba(20,20,20,.85);
-      border: 1px solid rgba(170,111,2,.4);
+    /* ── Layout ─────────────────────────────────────────────── */
+    .auth-body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+    }
+
+    .auth-card {
+      background: rgba(20, 20, 20, .88);
+      border: 1px solid rgba(170, 111, 2, .4);
       border-radius: 20px;
-      padding: 3rem 2.5rem;
+      padding: 2.8rem 2.4rem;
       width: 100%;
       max-width: 420px;
-      -webkit-backdrop-filter: blur(20px);
-      backdrop-filter: blur(20px);
+      backdrop-filter: blur(22px);
+      -webkit-backdrop-filter: blur(22px);
+      animation: mmFadeIn .35s ease both;
     }
-    .login-container .logo {
-      text-align: center;
-      margin-bottom: 2rem;
-      font-size: 2rem;
+
+    /* ── Logo ───────────────────────────────────────────────── */
+    .auth-logo {
       display: block;
+      text-align: center;
+      font-family: 'Syne', sans-serif;
+      font-size: 1.9rem;
+      font-weight: 800;
+      background: var(--gradient-brand);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 1.8rem;
     }
-    .login-form input, .login-form select {
+
+    /* ── Type toggle ────────────────────────────────────────── */
+    .type-toggle {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: .6rem;
+      margin-bottom: 1.8rem;
+      background: rgba(255, 255, 255, .04);
+      border: 1px solid rgba(170, 111, 2, .2);
+      border-radius: 12px;
+      padding: .35rem;
+    }
+
+    .type-toggle button {
+      padding: .65rem;
+      border: none;
+      border-radius: 9px;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: .9rem;
+      cursor: pointer;
+      transition: all .22s ease;
+    }
+
+    .type-toggle button.active {
+      background: var(--gradient-brand);
+      color: #0a0a0a;
+    }
+
+    /* ── Heading block ──────────────────────────────────────── */
+    .auth-heading {
+      text-align: center;
+      margin-bottom: 1.8rem;
+    }
+
+    .auth-heading h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.45rem;
+      color: var(--accent-light);
+      margin-bottom: .3rem;
+    }
+
+    .auth-heading p {
+      color: var(--text-secondary);
+      font-size: .88rem;
+    }
+
+    /* ── Inputs ─────────────────────────────────────────────── */
+    .auth-field {
+      margin-bottom: 1.1rem;
+    }
+
+    .auth-field input {
       width: 100%;
-      padding: .9rem 1.2rem;
-      background: rgba(255,255,255,.06);
-      border: 1px solid rgba(170,111,2,.4);
+      padding: .9rem 1.15rem;
+      background: rgba(255, 255, 255, .06);
+      border: 1px solid rgba(170, 111, 2, .38);
       border-radius: 10px;
       color: #fff;
       font-family: 'DM Sans', sans-serif;
-      font-size: 1rem;
-      margin-bottom: 1.2rem;
-      transition: border-color .2s;
+      font-size: 1rem;          /* ≥16px prevents iOS auto-zoom */
+      transition: border-color .2s, box-shadow .2s;
     }
-    .login-form input:focus, .login-form select:focus {
+
+    .auth-field input:focus {
       outline: none;
-      border-color: #c47d2e;
-      box-shadow: 0 0 0 3px rgba(196,125,46,.15);
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(196, 125, 46, .15);
     }
-    .login-form input::placeholder { color: #555; }
-    .login-button {
+
+    .auth-field input::placeholder { color: #555; }
+
+    /* ── Forgot link ────────────────────────────────────────── */
+    .forgot-link {
+      display: block;
+      text-align: right;
+      color: var(--accent);
+      font-size: .82rem;
+      margin-bottom: 1.2rem;
+      text-decoration: none;
+      transition: opacity .2s;
+    }
+    .forgot-link:hover { opacity: .75; }
+
+    /* ── Submit button ──────────────────────────────────────── */
+    .auth-submit {
       width: 100%;
       padding: 1rem;
-      background: linear-gradient(135deg, #c47d2e, #ffd8b5);
+      background: var(--gradient-brand);
       color: #0a0a0a;
       border: none;
       border-radius: 12px;
@@ -52,85 +139,252 @@
       font-size: 1rem;
       font-weight: 700;
       cursor: pointer;
-      transition: all .25s;
-      margin-top: .4rem;
+      transition: transform .22s, box-shadow .22s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: .5rem;
+      min-height: 52px;       /* fat tap target */
     }
-    .login-button:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(196,125,46,.4); }
-    .forgot-password {
-      display: block;
-      text-align: right;
-      color: #c47d2e;
-      font-size: .85rem;
-      margin-bottom: 1.2rem;
+
+    .auth-submit:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 26px rgba(196, 125, 46, .42);
+    }
+
+    .auth-submit:disabled {
+      opacity: .6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* ── Footer links ───────────────────────────────────────── */
+    .auth-footer {
+      text-align: center;
+      margin-top: 1.4rem;
+      color: var(--text-secondary);
+      font-size: .88rem;
+      line-height: 1.9;
+    }
+
+    .auth-footer a {
+      color: var(--accent);
+      font-weight: 600;
       text-decoration: none;
     }
-    .signup-text { text-align: center; margin-top: 1.5rem; color: #a0a0a0; font-size: .9rem; }
-    .signup-text a { color: #c47d2e; text-decoration: none; font-weight: 600; }
-    .signup-text a:hover { text-decoration: underline; }
-    .divider { display: flex; align-items: center; gap: 1rem; margin: 1.5rem 0; color: #555; font-size: .85rem; }
-    .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: rgba(255,255,255,.1); }
-    .type-btns { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; margin-bottom: 1.5rem; }
-    .type-btn {
-      padding: .7rem;
-      border: 2px solid rgba(170,111,2,.3);
-      border-radius: 10px;
-      background: transparent;
-      color: #a0a0a0;
-      font-family: 'DM Sans', sans-serif;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all .2s;
-      font-size: .9rem;
+    .auth-footer a:hover { text-decoration: underline; }
+
+    .auth-footer .divider {
+      display: flex;
+      align-items: center;
+      gap: .8rem;
+      color: #3a3a3a;
+      font-size: .82rem;
+      margin: .9rem 0;
     }
-    .type-btn.active, .type-btn:hover {
-      border-color: #c47d2e;
-      color: #ffd8b5;
-      background: rgba(196,125,46,.12);
+    .auth-footer .divider::before,
+    .auth-footer .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: rgba(255, 255, 255, .08);
     }
-    select option { background: #1e1e1e; }
+
+    /* ── Spinner ────────────────────────────────────────────── */
+    .btn-spinner {
+      width: 17px; height: 17px;
+      border: 2px solid rgba(0, 0, 0, .2);
+      border-top-color: #0a0a0a;
+      border-radius: 50%;
+      animation: spin .65s linear infinite;
+      flex-shrink: 0;
+    }
+
+    /* ── Mobile overrides ───────────────────────────────────── */
+    @media (max-width: 480px) {
+      .auth-card { padding: 2rem 1.25rem; }
+      .auth-logo { font-size: 1.65rem; }
+    }
   </style>
 </head>
 <body class="auth-body body">
 
-  <div class="login-container">
-    <a class="logo" href="index.html">MerchMarket</a>
+  <div class="auth-card" id="authCard">
 
-    <h2 style="color:#ffd8b5;font-family:'Syne',sans-serif;text-align:center;margin-bottom:.5rem;">Welcome Back</h2>
-    <p style="color:#a0a0a0;text-align:center;margin-bottom:1.5rem;font-size:.9rem;">Sign in to your account</p>
+    <a href="index.html" class="auth-logo">MerchMarket</a>
 
-    <div class="type-btns">
-      <button class="type-btn active" onclick="setType('member', this)">👤 Member</button>
-      <button class="type-btn"        onclick="setType('brand',  this)">🏷️ Brand</button>
+    <!-- Type toggle — drives heading + button label; actual redirect is from login() in merchmarket.js -->
+    <div class="type-toggle" role="tablist" aria-label="Account type">
+      <button id="toggleMember" role="tab" aria-selected="true"  class="active" onclick="AuthLogin.setType('member', this)">👤 Member</button>
+      <button id="toggleBrand"  role="tab" aria-selected="false"              onclick="AuthLogin.setType('brand',  this)">🏷️ Brand</button>
     </div>
 
-    <form class="login-form" id="loginForm">
-      <input type="email"    id="login-email"    placeholder="Email address" required autocomplete="email">
-      <input type="password" id="login-password" placeholder="Password"       required autocomplete="current-password">
-      <a href="#" class="forgot-password">FORGOT PASSWORD?</a>
-      <button type="submit" class="login-button">LOG IN</button>
+    <div class="auth-heading">
+      <h1 id="authHeading">Welcome Back</h1>
+      <p  id="authSubtext">Sign in to browse and buy merch</p>
+    </div>
+
+    <form id="loginForm" novalidate>
+      <div class="auth-field">
+        <input type="email" id="loginEmail" placeholder="Email address"
+               required autocomplete="email" inputmode="email">
+      </div>
+      <div class="auth-field">
+        <input type="password" id="loginPassword" placeholder="Password"
+               required autocomplete="current-password">
+      </div>
+
+      <a href="#" class="forgot-link" id="forgotLink">FORGOT PASSWORD?</a>
+
+      <button type="submit" class="auth-submit" id="loginBtn">
+        <span id="loginBtnLabel">LOG IN</span>
+      </button>
     </form>
 
-    <div class="divider">or</div>
+    <div class="auth-footer">
+      <div id="signupNudge">
+        Don't have an account? <a href="signup.html" id="signupLink">Sign up</a>
+      </div>
+      <div class="divider">or</div>
+      <a href="index.html">← Back to home</a>
+    </div>
 
-    <p class="signup-text">Don't have an account? <a href="signup.html">Sign up</a></p>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="merchmarket.js"></script>
-  <scropt src="supabase.js"></script>
+
   <script>
-    let selectedType = 'member';
-    function setType(type, btn) {
-      selectedType = type;
-      document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-    }
-    document.getElementById('loginForm').addEventListener('submit', e => {
-      e.preventDefault();
-      const email    = document.getElementById('login-email').value.trim();
-      const password = document.getElementById('login-password').value;
-      /* Use the global login() from merchmarket.js */
-      login(email, password);
-    });
+    /* ============================================================
+       AUTH LOGIN — controller
+       All auth logic lives in merchmarket.js (login(), getCurrentUser()).
+       This module only manages UI state for the type toggle and form.
+    ============================================================ */
+    const AuthLogin = (() => {
+
+      // ── state ─────────────────────────────────────────────── //
+      let currentType = 'member';
+
+      const COPY = {
+        member: {
+          heading: 'Welcome Back',
+          subtext: 'Sign in to browse and buy merch',
+          btnLabel: 'LOG IN',
+        },
+        brand: {
+          heading: 'Brand Login',
+          subtext: 'Sign in to manage your brand and products',
+          btnLabel: 'LOG IN AS BRAND',
+        }
+      };
+
+      // ── elements ───────────────────────────────────────────── //
+      const form     = document.getElementById('loginForm');
+      const emailEl  = document.getElementById('loginEmail');
+      const passEl   = document.getElementById('loginPassword');
+      const btn      = document.getElementById('loginBtn');
+      const labelEl  = document.getElementById('loginBtnLabel');
+      const heading  = document.getElementById('authHeading');
+      const subtext  = document.getElementById('authSubtext');
+
+      // ── setType ────────────────────────────────────────────── //
+      function setType(type, triggerBtn) {
+        currentType = type;
+        document.body.dataset.userType = type;
+
+        // Update toggle active state
+        document.querySelectorAll('.type-toggle button').forEach(b => {
+          const isActive = b === triggerBtn;
+          b.classList.toggle('active', isActive);
+          b.setAttribute('aria-selected', isActive);
+        });
+
+        // Update copy
+        const c = COPY[type] || COPY.member;
+        heading.textContent  = c.heading;
+        subtext.textContent  = c.subtext;
+        labelEl.textContent  = c.btnLabel;
+
+        // Refocus email field for UX continuity
+        emailEl.focus();
+      }
+
+      // ── setLoading ─────────────────────────────────────────── //
+      function setLoading(loading) {
+        btn.disabled = loading;
+        if (loading) {
+          btn.innerHTML = '<span class="btn-spinner"></span><span>Signing in…</span>';
+        } else {
+          const c = COPY[currentType] || COPY.member;
+          btn.innerHTML = `<span id="loginBtnLabel">${c.btnLabel}</span>`;
+        }
+      }
+
+      // ── forgot password ────────────────────────────────────── //
+      async function handleForgot(e) {
+        e.preventDefault();
+        const email = emailEl.value.trim();
+        if (!email) {
+          showToast('Enter your email address first.', 'error');
+          emailEl.focus();
+          return;
+        }
+
+        const { error } = await db.auth.resetPasswordForEmail(email, {
+          redirectTo: `${location.origin}/login.html`
+        });
+
+        if (error) {
+          showToast(error.message || 'Could not send reset email.', 'error');
+        } else {
+          showToast('Password reset link sent — check your inbox.', 'success');
+        }
+      }
+
+      // ── submit ─────────────────────────────────────────────── //
+      async function handleSubmit(e) {
+        e.preventDefault();
+
+        const email    = emailEl.value.trim();
+        const password = passEl.value;
+
+        if (!email || !password) {
+          showToast('Please fill in both fields.', 'error');
+          return;
+        }
+
+        setLoading(true);
+
+        try {
+          // login() in merchmarket.js handles Supabase auth + redirect based on profile.type.
+          // The type toggle here is purely cosmetic (copy / UX intent).
+          // The actual redirect is authoritative: brand → brandflow.html, member → marketplace.html.
+          await login(email, password);
+        } finally {
+          // Only reached if login() returned without redirecting (e.g. error path).
+          setLoading(false);
+        }
+      }
+
+      // ── boot ───────────────────────────────────────────────── //
+      function init() {
+        // Read type from URL param: login.html?type=brand
+        const params = new URLSearchParams(location.search);
+        const t = params.get('type');
+        if (t === 'brand') {
+          setType('brand', document.getElementById('toggleBrand'));
+        }
+
+        form.addEventListener('submit', handleSubmit);
+        document.getElementById('forgotLink').addEventListener('click', handleForgot);
+      }
+
+      // Public API
+      return { setType, init };
+    })();
+
+    document.addEventListener('DOMContentLoaded', AuthLogin.init);
   </script>
+
 </body>
 </html>

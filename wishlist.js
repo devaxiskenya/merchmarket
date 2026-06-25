@@ -315,7 +315,7 @@
         .insert({
           user_id:    user.id,
           brand_id:   brandId,
-          total:      total.toFixed(2),
+          total_amount: total.toFixed(2),
           status:     'pending',
           location:   'Nairobi, Kenya',
           created_at: new Date().toISOString()

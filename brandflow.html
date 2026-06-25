@@ -10,268 +10,210 @@
 <body class="admin-body">
 
 <nav class="admin-navbar">
-<div class="logo" onclick="location.href='index.html'">MerchMarket <span style="font-size:.9rem;font-weight:400;opacity:.7;">Brand Admin</span><span id="brand-user-icon" style="margin-left:.6rem;font-size:0.95rem;opacity:.95;">🟣</span></div>
-    <ul class="admin-nav-links">
-      <li><a href="#" data-tab="orders"    class="nav-tab active">💆 Orders</a></li>
-      <li><a href="#" data-tab="inventory" class="nav-tab">💎 Inventory</a></li>
-      <li><a href="#" data-tab="payments"  class="nav-tab">💳 Payment</a></li>
-      <li><a href="#" data-tab="customers" class="nav-tab">👥 Customers</a></li>
-      <li><a href="#" data-tab="reset"     class="nav-tab">⚠️ Reset</a></li>
-      <li><a href="index.html" style="color:#a0a0a0;font-size:.85rem;padding:1rem;">← Exit</a></li>
-    </ul>
-  </nav>
+  <div class="logo" onclick="location.href='index.html'">
+    MerchMarket
+    <span style="font-size:.9rem;font-weight:400;opacity:.7;">Brand Admin</span>
+    <span id="brand-user-icon" style="margin-left:.6rem;font-size:0.95rem;opacity:.95;">🟣</span>
+  </div>
+  <ul class="admin-nav-links">
+    <li><a href="#" data-tab="orders"    class="nav-tab active">💆 Orders</a></li>
+    <li><a href="#" data-tab="inventory" class="nav-tab">💎 Inventory</a></li>
+    <li><a href="#" data-tab="payments"  class="nav-tab">💳 Payment</a></li>
+    <li><a href="#" data-tab="customers" class="nav-tab">👥 Customers</a></li>
+    <li><a href="#" data-tab="reset"     class="nav-tab">⚠️ Reset</a></li>
+    <li><a href="index.html" style="color:#a0a0a0;font-size:.85rem;padding:1rem;">← Exit</a></li>
+  </ul>
+</nav>
 
-  <main class="admin-main" style="padding-top:6rem;">
+<main class="admin-main" style="padding-top:6rem;">
 
-    <!-- Orders -->
-    <section id="orders" class="module active">
-      <div class="module-header">
-        <h1>Orders Management</h1>
-        <div class="module-actions">
-          <input type="text" id="orders-search" placeholder="Search by name, email, or order ID…" class="search-input">
-          <button id="refresh-orders" class="btn btn-primary">↻ Refresh</button>
-        </div>
+  <!-- Orders -->
+  <section id="orders" class="module active">
+    <div class="module-header">
+      <h1>Orders Management</h1>
+      <div class="module-actions">
+        <input type="text" id="orders-search" placeholder="Search by name, email, or order ID…" class="search-input">
+        <button id="refresh-orders" class="btn btn-primary">↻ Refresh</button>
       </div>
+    </div>
 
-      <div class="stats-grid">
-        <div class="stat-card"><h3>Total Orders</h3><span id="total-orders"     class="stat-value">0</span></div>
-        <div class="stat-card"><h3>Pending</h3>     <span id="pending-orders"   class="stat-value">0</span></div>
-        <div class="stat-card"><h3>Confirmed</h3>   <span id="confirmed-orders" class="stat-value">0</span></div>
-        <div class="stat-card"><h3>Active</h3>      <span id="active-orders"    class="stat-value">0</span></div>
-        <div class="stat-card"><h3>Completed</h3>   <span id="completed-orders" class="stat-value">0</span></div>
-        <div class="stat-card"><h3>Cancelled</h3>   <span id="cancelled-orders" class="stat-value">0</span></div>
-        <div class="stat-card revenue"><h3>Total Revenue</h3><span id="total-revenue" class="stat-value">KES 0</span></div>
-      </div>
+    <div class="stats-grid">
+      <div class="stat-card"><h3>Total Orders</h3><span id="total-orders"     class="stat-value">0</span></div>
+      <div class="stat-card"><h3>Pending</h3>     <span id="pending-orders"   class="stat-value">0</span></div>
+      <div class="stat-card"><h3>Confirmed</h3>   <span id="confirmed-orders" class="stat-value">0</span></div>
+      <div class="stat-card"><h3>Active</h3>      <span id="active-orders"    class="stat-value">0</span></div>
+      <div class="stat-card"><h3>Completed</h3>   <span id="completed-orders" class="stat-value">0</span></div>
+      <div class="stat-card"><h3>Cancelled</h3>   <span id="cancelled-orders" class="stat-value">0</span></div>
+      <div class="stat-card revenue"><h3>Total Revenue</h3><span id="total-revenue" class="stat-value">KES 0</span></div>
+    </div>
 
-      <div class="orders-table-container">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Order ID</th>
-              <th>Customer</th>
-              <th>Item</th>
-              <th>Dates</th>
-              <th>Location</th>
-              <th>Total</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="orders-table-body"></tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- Inventory -->
-    <section id="inventory" class="module">
-      <div class="module-header">
-        <h1>Inventory Management</h1>
-        <button id="add-inventory" class="btn btn-primary">+ Add Item</button>
-      </div>
+    <div class="orders-table-container">
       <table class="data-table">
         <thead>
           <tr>
+            <th>Order ID</th>
+            <th>Customer</th>
             <th>Item</th>
-            <th>SKU</th>
-            <th>Stock</th>
-            <th>Price (KES)</th>
-            <th>Images</th>
+            <th>Date</th>
+            <th>Location</th>
+            <th>Total</th>
+            <th>Status</th>
             <th>Actions</th>
           </tr>
         </thead>
-        <tbody id="inventory-table-body"></tbody>
+        <tbody id="orders-table-body"></tbody>
       </table>
-      <div id="inventory-modal" class="modal"></div>
-    </section>
+    </div>
+  </section>
 
-    <!-- Payments -->
-    <section id="payments" class="module">
-      <div class="module-header">
-        <h1>Vendor Payment Details</h1>
-        <div class="module-actions">
-          <button id="save-payment-details" class="btn btn-primary">Save</button>
-        </div>
+  <!-- Inventory -->
+  <section id="inventory" class="module">
+    <div class="module-header">
+      <h1>Inventory Management</h1>
+      <button id="add-inventory" class="btn btn-primary">+ Add Item</button>
+    </div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>SKU</th>
+          <th>Stock</th>
+          <th>Price (KES)</th>
+          <th>Images</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="inventory-table-body"></tbody>
+    </table>
+    <!-- Modal is rendered here by brandflow-admin.js -->
+    <div id="inventory-modal" class="modal"></div>
+  </section>
+
+  <!-- Payments -->
+  <section id="payments" class="module">
+    <div class="module-header">
+      <h1>Vendor Payment Details</h1>
+      <div class="module-actions">
+        <button id="save-payment-details" class="btn btn-primary">Save</button>
       </div>
+    </div>
 
-      <div class="panel" style="background:rgba(255,255,255,.04);border:1px solid rgba(170,111,2,.3);border-radius:16px;padding:1.8rem;">
-        <div class="form-row" style="margin-bottom:1rem;">
-          <div class="form-group">
-            <label>Preferred Payment Method</label>
-            <select id="pm-method" style="width:100%;padding:.85rem 1.1rem;border:1px solid var(--border-brand);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'DM Sans',sans-serif;">
-              <option value="mpesa">M-Pesa</option>
-              <option value="bank">Bank Transfer</option>
-              <option value="paypal">PayPal</option>
-              <option value="cash">Cash on Delivery</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label>Display Label (for customers)</label>
-            <input id="pm-label" type="text" placeholder="e.g. Paybill/Shortcode" />
-          </div>
-        </div>
-
+    <div class="panel" style="background:rgba(255,255,255,.04);border:1px solid rgba(170,111,2,.3);border-radius:16px;padding:1.8rem;">
+      <div class="form-row" style="margin-bottom:1rem;">
         <div class="form-group">
-          <label id="pm-detail-label">M-Pesa Phone Number</label>
-          <input id="pm-detail" type="text" placeholder="e.g. 07xx xxx xxx or Paybill/Shortcode" />
+          <label>Preferred Payment Method</label>
+          <select id="pm-method" style="width:100%;padding:.85rem 1.1rem;border:1px solid var(--border-brand);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'DM Sans',sans-serif;">
+            <option value="mpesa">M-Pesa</option>
+            <option value="bank">Bank Transfer</option>
+            <option value="paypal">PayPal</option>
+            <option value="cash">Cash on Delivery</option>
+          </select>
         </div>
-
-        <div class="form-row" style="margin-top:1rem;">
-          <div class="form-group">
-            <label>Account Name (optional)</label>
-            <input id="pm-account-name" type="text" placeholder="e.g. Merch Vendor Ltd" />
-          </div>
-          <div class="form-group">
-            <label>Bank Name (optional)</label>
-            <input id="pm-bank-name" type="text" placeholder="e.g. KCB Bank" />
-          </div>
-        </div>
-
-        <div class="form-row" style="margin-top:1rem;">
-          <div class="form-group">
-            <label>Account Number (optional)</label>
-            <input id="pm-account-number" type="text" placeholder="e.g. 0123456789" />
-          </div>
-          <div class="form-group">
-            <label>Email (optional)</label>
-            <input id="pm-email" type="email" placeholder="e.g. vendor@example.com" />
-          </div>
-        </div>
-
-        <div class="form-group" style="margin-top:1rem;">
-          <label>Delivery / Payment Instructions (optional)</label>
-          <textarea id="pm-instructions" placeholder="e.g. Send confirmation to WhatsApp after payment" style="width:100%;padding:.85rem 1.1rem;border:1px solid var(--border-brand);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'DM Sans',sans-serif;"></textarea>
-        </div>
-
-        <div class="mini-note" style="margin-top:1.2rem;color:var(--text-secondary);font-size:.9rem;">
-          Note: Wishlist reads vendor payment details from a separate vendor payment database file (not localStorage).
+        <div class="form-group">
+          <label>Display Label (for customers)</label>
+          <input id="pm-label" type="text" placeholder="e.g. Paybill/Shortcode" />
         </div>
       </div>
-    </section>
 
-    <!-- Customers -->
-    <section id="customers" class="module">
-      <div class="module-header">
-        <h1>Customers</h1>
+      <div class="form-group">
+        <label id="pm-detail-label">M-Pesa Phone Number</label>
+        <input id="pm-detail" type="text" placeholder="e.g. 07xx xxx xxx or Paybill/Shortcode" />
       </div>
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Email</th>
-            <th>Orders</th>
-            <th>Total Spent (KES)</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="customers-table-body"></tbody>
-      </table>
-    </section>
 
-    <!-- Reset -->
-    <section id="reset" class="module">
-      <div class="reset-container">
-        <h1>Reset Database</h1>
-        <p>⚠️ This will permanently delete all orders, inventory, and customer data. This action cannot be undone.</p>
-        <button id="reset-db" class="btn btn-danger" style="margin-top:1rem;">Confirm Reset</button>
+      <div class="form-row" style="margin-top:1rem;">
+        <div class="form-group">
+          <label>Account Name (optional)</label>
+          <input id="pm-account-name" type="text" placeholder="e.g. Merch Vendor Ltd" />
+        </div>
+        <div class="form-group">
+          <label>Bank Name (optional)</label>
+          <input id="pm-bank-name" type="text" placeholder="e.g. KCB Bank" />
+        </div>
       </div>
-    </section>
 
-  </main>
+      <div class="form-row" style="margin-top:1rem;">
+        <div class="form-group">
+          <label>Account Number (optional)</label>
+          <input id="pm-account-number" type="text" placeholder="e.g. 0123456789" />
+        </div>
+        <div class="form-group">
+          <label>Email (optional)</label>
+          <input id="pm-email" type="email" placeholder="e.g. vendor@example.com" />
+        </div>
+      </div>
 
-  <script src="data-store.js"></script>
-  <script src="storage.js"></script>
-  <script src="merchmarket.js"></script>
-  <script src="brandflow-admin.js"></script>
-  <script src="carousel.js"></script>
-  <script src="supabase.js"></script>
+      <div class="form-group" style="margin-top:1rem;">
+        <label>Delivery / Payment Instructions (optional)</label>
+        <textarea id="pm-instructions"
+          placeholder="e.g. Send M-Pesa confirmation to WhatsApp after payment"
+          style="width:100%;padding:.85rem 1.1rem;border:1px solid var(--border-brand);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'DM Sans',sans-serif;min-height:80px;resize:vertical;"></textarea>
+      </div>
 
-  <script>
-    // Brand Admin access guard (prevents direct link access to brandflow.html)
-    document.addEventListener('DOMContentLoaded', () => {
-      try {
-        // Hard guard: block brandflow UI unless a brand Supabase session is active.
-        // (Avoid relying on legacy localStorage keys that may not be set.)
-        const isBrand = async () => {
-          if (typeof getCurrentUser !== 'function') return false;
-          const user = await getCurrentUser();
-          return !!(user && user.type === 'brand');
-        };
+      <div class="mini-note" style="margin-top:1.2rem;color:var(--text-secondary);font-size:.9rem;">
+        These details are shown to customers on the Wishlist page when they request an order.
+      </div>
+    </div>
+  </section>
 
-        (async () => {
-          try {
-            const ok = await isBrand();
-            if (!ok) {
-              window.location.href = 'marketplace.html';
-              return;
-            }
+  <!-- Customers -->
+  <section id="customers" class="module">
+    <div class="module-header"><h1>Customers</h1></div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Orders</th>
+          <th>Total Spent (KES)</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="customers-table-body"></tbody>
+    </table>
+  </section>
 
-            // Brand logged-in indicator
-            const iconEl = document.getElementById('brand-user-icon');
-            if (iconEl) {
-              iconEl.textContent = '✅';
-              iconEl.style.color = '#2ecc71';
-            }
+  <!-- Reset -->
+  <section id="reset" class="module">
+    <div class="reset-container">
+      <h1>Reset Brand Data</h1>
+      <p>⚠️ This permanently deletes all your orders, inventory, and customer data. This action cannot be undone.</p>
+      <button id="reset-db" class="btn btn-danger" style="margin-top:1rem;">Confirm Reset</button>
+    </div>
+  </section>
 
-            const user = await getCurrentUser();
-            if (iconEl && user?.name) {
-              iconEl.title = `Logged in as: ${user.name}`;
-              iconEl.setAttribute('aria-label', `Logged in as ${user.name}`);
-            }
-          } catch (e) {
-            window.location.href = 'marketplace.html';
-          }
-        })();
+</main>
 
-        return;
+<!-- Load order: Supabase → merchmarket.js (defines db + getCurrentUser) → brandflow-admin.js -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="merchmarket.js"></script>
+<script src="brandflow-admin.js"></script>
 
-        // Brand logged-in indicator
-        const iconEl = document.getElementById('brand-user-icon');
-        if (iconEl) {
-          iconEl.textContent = '✅';
-          iconEl.style.color = '#2ecc71';
-        }
-
-        // If multiple brands exist, show the current brand name on hover
-        if (iconEl && user?.name) {
-          iconEl.title = `Logged in as: ${user.name}`;
-          iconEl.setAttribute('aria-label', `Logged in as ${user.name}`);
-        }
-      } catch (e) {
-        // Fail closed
-        window.location.href = 'marketplace.html';
+<script>
+  // Brand Admin access guard — runs after brandflow-admin.js is loaded
+  (async () => {
+    try {
+      const user = await getCurrentUser();
+      if (!user || user.type !== 'brand') {
+        window.location.href = 'login.html?type=brand';
         return;
       }
 
-
-      // Small inline wiring for payment form labels
-      const methodEl = document.getElementById('pm-method');
-      const detailLabel = document.getElementById('pm-detail-label');
-      const pmDetail = document.getElementById('pm-detail');
-      if (!methodEl || !detailLabel) return;
-
-      const update = () => {
-        const m = methodEl.value;
-        if (m === 'mpesa') {
-          detailLabel.textContent = 'M-Pesa Phone Number / Paybill/Shortcode';
-          pmDetail.placeholder = 'e.g. 07xx xxx xxx or Paybill/Shortcode';
-        } else if (m === 'bank') {
-          detailLabel.textContent = 'Bank Account Number';
-          pmDetail.placeholder = 'e.g. 0123456789';
-        } else if (m === 'paypal') {
-          detailLabel.textContent = 'PayPal Email';
-          pmDetail.placeholder = 'e.g. vendor@paypal.com';
-        } else {
-          detailLabel.textContent = 'Cash Handling Instructions';
-          pmDetail.placeholder = 'e.g. Pay cash to rider';
+      // Show logged-in indicator
+      const iconEl = document.getElementById('brand-user-icon');
+      if (iconEl) {
+        iconEl.textContent = '✅';
+        iconEl.style.color  = '#2ecc71';
+        if (user.name) {
+          iconEl.title = `Logged in as: ${user.name}`;
+          iconEl.setAttribute('aria-label', `Logged in as ${user.name}`);
         }
-      };
-
-      methodEl.addEventListener('change', update);
-      update();
-    });
-  </script>
+      }
+    } catch (e) {
+      console.error('Brand guard error:', e);
+      window.location.href = 'login.html?type=brand';
+    }
+  })();
+</script>
 
 </body>
 </html>
-

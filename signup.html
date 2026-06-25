@@ -7,73 +7,509 @@
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="merchmarket.css">
   <style>
-    .login-container {
-      background: rgba(20,20,20,.85);
-      border: 1px solid rgba(170,111,2,.4);
-      border-radius: 20px;
-      padding: 3rem 2.5rem;
-      width: 100%;
-      max-width: 440px;
-      backdrop-filter: blur(20px);
-      text-align: center;
-    }
-    .logo { display: block; font-size: 2rem; margin-bottom: 2rem; }
-    .title {
-      font-family: 'Syne', sans-serif;
-      font-size: 1.6rem;
-      color: #ffd8b5;
-      margin-bottom: .5rem;
-    }
-    .sub { color: #a0a0a0; font-size: .95rem; margin-bottom: 2.5rem; }
-    .account-container { margin-bottom: 1rem; }
-    .account-button {
-      width: 100%;
-      padding: 1.3rem 2rem;
-      border: 2px solid rgba(170,111,2,.35);
-      border-radius: 14px;
-      background: rgba(255,255,255,.04);
-      color: #ffd8b5;
-      font-family: 'Syne', sans-serif;
-      font-size: 1.1rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: all .25s;
+    /* ── Layout ─────────────────────────────────────────────── */
+    .auth-body {
+      min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 1rem;
+      padding: 2rem 1rem;
     }
-    .account-button:hover {
-      background: rgba(196,125,46,.18);
-      border-color: #c47d2e;
+
+    .auth-card {
+      background: rgba(20, 20, 20, .88);
+      border: 1px solid rgba(170, 111, 2, .4);
+      border-radius: 20px;
+      padding: 2.8rem 2.4rem;
+      width: 100%;
+      max-width: 440px;
+      backdrop-filter: blur(22px);
+      -webkit-backdrop-filter: blur(22px);
+      animation: mmFadeIn .35s ease both;
+    }
+
+    /* ── Logo ───────────────────────────────────────────────── */
+    .auth-logo {
+      display: block;
+      text-align: center;
+      font-family: 'Syne', sans-serif;
+      font-size: 1.9rem;
+      font-weight: 800;
+      background: var(--gradient-brand);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 1.8rem;
+    }
+
+    /* ── Heading ────────────────────────────────────────────── */
+    .auth-heading {
+      text-align: center;
+      margin-bottom: 1.8rem;
+    }
+
+    .auth-heading h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.45rem;
+      color: var(--accent-light);
+      margin-bottom: .3rem;
+    }
+
+    .auth-heading p {
+      color: var(--text-secondary);
+      font-size: .88rem;
+    }
+
+    /* ── Views — only one visible at a time ─────────────────── */
+    .auth-view { display: none; }
+    .auth-view.active { display: block; }
+
+    /* ── Type picker (view: pick) ────────────────────────────── */
+    .type-pick-btn {
+      width: 100%;
+      padding: 1.25rem 1.5rem;
+      border: 2px solid rgba(170, 111, 2, .32);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, .04);
+      color: var(--accent-light);
+      font-family: 'Syne', sans-serif;
+      font-size: 1.05rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background .22s, border-color .22s, transform .22s, box-shadow .22s;
+      display: flex;
+      align-items: center;
+      gap: .9rem;
+      margin-bottom: .9rem;
+      text-align: left;
+      min-height: 64px;          /* fat tap target on mobile */
+    }
+
+    .type-pick-btn:hover {
+      background: rgba(196, 125, 46, .16);
+      border-color: var(--accent);
       transform: translateY(-3px);
-      box-shadow: 0 8px 24px rgba(196,125,46,.25);
+      box-shadow: 0 8px 24px rgba(196, 125, 46, .22);
     }
-    .already { margin-top: 2rem; color: #a0a0a0; font-size: .9rem; }
-    .already a { color: #c47d2e; text-decoration: none; font-weight: 600; }
+
+    .type-pick-btn .pick-sub {
+      font-family: 'DM Sans', sans-serif;
+      font-size: .82rem;
+      font-weight: 400;
+      opacity: .65;
+      margin-top: .15rem;
+    }
+
+    .type-pick-btn .pick-inner {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Perks strip (brand signup) ─────────────────────────── */
+    .brand-perks {
+      display: flex;
+      flex-direction: column;
+      gap: .45rem;
+      background: rgba(196, 125, 46, .07);
+      border: 1px solid rgba(196, 125, 46, .2);
+      border-radius: 10px;
+      padding: .9rem 1.1rem;
+      margin-bottom: 1.4rem;
+    }
+
+    .brand-perks span {
+      color: var(--accent-light);
+      font-size: .84rem;
+    }
+
+    /* ── Inputs ─────────────────────────────────────────────── */
+    .auth-field { margin-bottom: 1.05rem; }
+
+    .auth-field input {
+      width: 100%;
+      padding: .9rem 1.15rem;
+      background: rgba(255, 255, 255, .06);
+      border: 1px solid rgba(170, 111, 2, .38);
+      border-radius: 10px;
+      color: #fff;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 1rem;          /* ≥16px — no iOS auto-zoom */
+      transition: border-color .2s, box-shadow .2s;
+    }
+
+    .auth-field input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(196, 125, 46, .15);
+    }
+
+    .auth-field input::placeholder { color: #555; }
+
+    /* ── Error message ──────────────────────────────────────── */
+    .auth-error {
+      color: #ef9a9a;
+      font-size: .82rem;
+      margin-bottom: .8rem;
+      display: none;
+      padding: .55rem .8rem;
+      background: rgba(244, 67, 54, .08);
+      border-radius: 8px;
+      border: 1px solid rgba(244, 67, 54, .2);
+    }
+
+    /* ── Submit button ──────────────────────────────────────── */
+    .auth-submit {
+      width: 100%;
+      padding: 1rem;
+      background: var(--gradient-brand);
+      color: #0a0a0a;
+      border: none;
+      border-radius: 12px;
+      font-family: 'Syne', sans-serif;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .22s, box-shadow .22s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: .5rem;
+      min-height: 52px;
+      margin-top: .3rem;
+    }
+
+    .auth-submit:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 26px rgba(196, 125, 46, .42);
+    }
+
+    .auth-submit:disabled {
+      opacity: .6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* ── Back link ──────────────────────────────────────────── */
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: .3rem;
+      color: var(--text-secondary);
+      font-size: .85rem;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
+      font-family: 'DM Sans', sans-serif;
+      transition: color .2s;
+    }
+    .back-link:hover { color: var(--accent-light); }
+
+    /* ── Footer links ───────────────────────────────────────── */
+    .auth-footer {
+      text-align: center;
+      margin-top: 1.4rem;
+      color: var(--text-secondary);
+      font-size: .88rem;
+      line-height: 2;
+    }
+
+    .auth-footer a {
+      color: var(--accent);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .auth-footer a:hover { text-decoration: underline; }
+
+    /* ── Spinner ────────────────────────────────────────────── */
+    .btn-spinner {
+      width: 17px; height: 17px;
+      border: 2px solid rgba(0, 0, 0, .2);
+      border-top-color: #0a0a0a;
+      border-radius: 50%;
+      animation: spin .65s linear infinite;
+      flex-shrink: 0;
+    }
+
+    /* ── Mobile overrides ───────────────────────────────────── */
+    @media (max-width: 480px) {
+      .auth-card    { padding: 2rem 1.25rem; }
+      .auth-logo    { font-size: 1.65rem; }
+      .type-pick-btn { padding: 1.1rem 1.2rem; font-size: .97rem; }
+    }
   </style>
 </head>
 <body class="auth-body body">
 
-  <div class="login-container">
-    <a class="logo" href="index.html">MerchMarket</a>
-    <h1 class="title">Create an Account</h1>
-    <p class="sub">Choose how you want to use MerchMarket</p>
+  <div class="auth-card" id="authCard">
 
-    <div class="account-container">
-      <button class="account-button" onclick="window.location.href='authmember.html'">
-        <span>👤</span> I'm a Member <span style="font-size:.85rem;font-weight:400;opacity:.7;">— Browse &amp; buy merch</span>
+    <a href="index.html" class="auth-logo">MerchMarket</a>
+
+    <!-- ── VIEW: pick type ─────────────────────────────────── -->
+    <div class="auth-view active" id="viewPick">
+      <div class="auth-heading">
+        <h1>Create an Account</h1>
+        <p>Choose how you want to use MerchMarket</p>
+      </div>
+
+      <button class="type-pick-btn" onclick="AuthSignup.showView('member')">
+        <span style="font-size:1.7rem;">👤</span>
+        <span class="pick-inner">
+          I'm a Member
+          <span class="pick-sub">Browse &amp; buy merch</span>
+        </span>
       </button>
+
+      <button class="type-pick-btn" onclick="AuthSignup.showView('brand')">
+        <span style="font-size:1.7rem;">🏷️</span>
+        <span class="pick-inner">
+          I'm a Brand
+          <span class="pick-sub">Sell &amp; manage products</span>
+        </span>
+      </button>
+
+      <div class="auth-footer">
+        Already have an account? <a href="login.html">Log in</a>
+      </div>
     </div>
 
-    <div class="account-container">
-      <button class="account-button" onclick="window.location.href='authbrand.html'">
-        <span>🏷️</span> I'm a Brand <span style="font-size:.85rem;font-weight:400;opacity:.7;">— Sell &amp; manage products</span>
-      </button>
+    <!-- ── VIEW: member signup ─────────────────────────────── -->
+    <div class="auth-view" id="viewMember">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.4rem;">
+        <button class="back-link" onclick="AuthSignup.showView('pick')">← Back</button>
+        <span style="color:#555;font-size:.8rem;">Member</span>
+      </div>
+
+      <div class="auth-heading">
+        <h1>Member Sign Up</h1>
+        <p>Create your free account to start shopping</p>
+      </div>
+
+      <form id="memberForm" novalidate>
+        <div class="auth-field">
+          <input type="text" id="memberName" placeholder="Full Name"
+                 required autocomplete="name">
+        </div>
+        <div class="auth-field">
+          <input type="email" id="memberEmail" placeholder="Email Address"
+                 required autocomplete="email" inputmode="email">
+        </div>
+        <div class="auth-field">
+          <input type="password" id="memberPassword" placeholder="Password (min 8 chars)"
+                 required autocomplete="new-password" minlength="8">
+        </div>
+        <div class="auth-field">
+          <input type="password" id="memberConfirm" placeholder="Confirm Password"
+                 required autocomplete="new-password" minlength="8">
+        </div>
+
+        <div class="auth-error" id="memberError"></div>
+
+        <button type="submit" class="auth-submit" id="memberBtn">
+          CREATE ACCOUNT
+        </button>
+      </form>
+
+      <div class="auth-footer">
+        Already have an account? <a href="login.html">Log in</a>
+      </div>
     </div>
 
-    <p class="already">Already have an account? <a href="login.html">Log in</a></p>
-  </div>
+    <!-- ── VIEW: brand signup ──────────────────────────────── -->
+    <div class="auth-view" id="viewBrand">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.4rem;">
+        <button class="back-link" onclick="AuthSignup.showView('pick')">← Back</button>
+        <span style="color:#555;font-size:.8rem;">Brand</span>
+      </div>
+
+      <div class="auth-heading">
+        <h1>Brand Sign Up</h1>
+        <p>Start selling your designs today</p>
+      </div>
+
+      <div class="brand-perks">
+        <span>✅ Manage your inventory &amp; orders</span>
+        <span>✅ List products on the marketplace</span>
+        <span>✅ Publish designs to the social feed</span>
+      </div>
+
+      <form id="brandForm" novalidate>
+        <div class="auth-field">
+          <input type="text" id="brandName" placeholder="Brand Name"
+                 required autocomplete="organization">
+        </div>
+        <div class="auth-field">
+          <input type="email" id="brandEmail" placeholder="Email Address"
+                 required autocomplete="email" inputmode="email">
+        </div>
+        <div class="auth-field">
+          <input type="password" id="brandPassword" placeholder="Password (min 8 chars)"
+                 required autocomplete="new-password" minlength="8">
+        </div>
+        <div class="auth-field">
+          <input type="password" id="brandConfirm" placeholder="Confirm Password"
+                 required autocomplete="new-password" minlength="8">
+        </div>
+
+        <div class="auth-error" id="brandError"></div>
+
+        <button type="submit" class="auth-submit" id="brandBtn">
+          CREATE BRAND ACCOUNT
+        </button>
+      </form>
+
+      <div class="auth-footer">
+        Already have an account? <a href="login.html?type=brand">Log in as Brand</a>
+      </div>
+    </div>
+
+  </div><!-- /auth-card -->
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="merchmarket.js"></script>
+
+  <script>
+    /* ============================================================
+       AUTH SIGNUP — controller
+       Drives three views within a single HTML shell:
+         pick   → choose member or brand
+         member → member registration form
+         brand  → brand registration form
+
+       createAccount() and login() live in merchmarket.js.
+       This module handles only view transitions, validation,
+       loading states, and error display.
+    ============================================================ */
+    const AuthSignup = (() => {
+
+      const VIEWS = ['pick', 'member', 'brand'];
+
+      // ── showView ───────────────────────────────────────────── //
+      function showView(name) {
+        if (!VIEWS.includes(name)) name = 'pick';
+
+        VIEWS.forEach(v => {
+          document.getElementById(`view${cap(v)}`).classList.toggle('active', v === name);
+        });
+
+        // Sync body dataset so createAccount() in merchmarket.js picks up correct type
+        document.body.dataset.userType = (name === 'pick') ? '' : name;
+
+        // Scroll card top into view on mobile
+        document.getElementById('authCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        // Focus first input of the revealed form
+        const form = document.querySelector(`#view${cap(name)} input`);
+        if (form) setTimeout(() => form.focus(), 120);
+      }
+
+      function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+      // ── showError ──────────────────────────────────────────── //
+      function showError(id, msg) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = msg;
+        el.style.display = msg ? 'block' : 'none';
+      }
+
+      // ── setLoading ─────────────────────────────────────────── //
+      function setLoading(btnId, loading, label) {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        btn.disabled = loading;
+        btn.innerHTML = loading
+          ? '<span class="btn-spinner"></span><span>Creating account…</span>'
+          : label;
+      }
+
+      // ── member submit ──────────────────────────────────────── //
+      async function handleMember(e) {
+        e.preventDefault();
+        showError('memberError', '');
+
+        const name     = document.getElementById('memberName').value.trim();
+        const email    = document.getElementById('memberEmail').value.trim();
+        const password = document.getElementById('memberPassword').value;
+        const confirm  = document.getElementById('memberConfirm').value;
+
+        if (!name || !email || !password || !confirm) {
+          showError('memberError', 'Please fill in all fields.');
+          return;
+        }
+        if (password !== confirm) {
+          showError('memberError', 'Passwords do not match.');
+          return;
+        }
+        if (password.length < 8) {
+          showError('memberError', 'Password must be at least 8 characters.');
+          return;
+        }
+
+        setLoading('memberBtn', true, 'CREATE ACCOUNT');
+
+        try {
+          const result = await createAccount('member', name, email, password);
+          // result.pending = true when Supabase requires email confirmation
+          // result is a full user object when auto-confirm is enabled (dev mode)
+          setTimeout(() => { window.location.href = 'login.html'; }, 1500);
+        } catch (err) {
+          showError('memberError', err.message || 'Sign up failed. Try again.');
+          setLoading('memberBtn', false, 'CREATE ACCOUNT');
+        }
+      }
+
+      // ── brand submit ───────────────────────────────────────── //
+      async function handleBrand(e) {
+        e.preventDefault();
+        showError('brandError', '');
+
+        const name     = document.getElementById('brandName').value.trim();
+        const email    = document.getElementById('brandEmail').value.trim();
+        const password = document.getElementById('brandPassword').value;
+        const confirm  = document.getElementById('brandConfirm').value;
+
+        if (!name || !email || !password || !confirm) {
+          showError('brandError', 'Please fill in all fields.');
+          return;
+        }
+        if (password !== confirm) {
+          showError('brandError', 'Passwords do not match.');
+          return;
+        }
+        if (password.length < 8) {
+          showError('brandError', 'Password must be at least 8 characters.');
+          return;
+        }
+
+        setLoading('brandBtn', true, 'CREATE BRAND ACCOUNT');
+
+        try {
+          const result = await createAccount('brand', name, email, password);
+          setTimeout(() => { window.location.href = 'login.html?type=brand'; }, 1500);
+        } catch (err) {
+          showError('brandError', err.message || 'Sign up failed. Try again.');
+          setLoading('brandBtn', false, 'CREATE BRAND ACCOUNT');
+        }
+      }
+
+      // ── boot ───────────────────────────────────────────────── //
+      function init() {
+        // URL param support: signup.html?type=brand skips the picker
+        const params = new URLSearchParams(location.search);
+        const t = params.get('type');
+        if (t === 'brand' || t === 'member') showView(t);
+
+        document.getElementById('memberForm').addEventListener('submit', handleMember);
+        document.getElementById('brandForm').addEventListener('submit', handleBrand);
+      }
+
+      // Public API
+      return { showView, init };
+    })();
+
+    document.addEventListener('DOMContentLoaded', AuthSignup.init);
+  </script>
 
 </body>
 </html>

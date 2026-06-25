@@ -10,9 +10,14 @@
 
 const SUPABASE_URL = 'https://omyzcnizwxumvookotsy.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_2Dvox3zHhG4WG7An-sn0tQ_eZ9z6xh8';
-// NOTE: supabase is the global from the CDN script tag, e.g.
-// <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-const { createClient } = supabase;
+// We expect the Supabase SDK to be loaded on the page.
+// If you're using the CDN, it must define `window.supabase` before this file runs.
+const { createClient } = (typeof supabase !== 'undefined') ? supabase : {};
+if (!createClient) {
+  console.error('Supabase SDK not loaded. Include the @supabase/supabase-js script tag before merchmarket.js');
+  throw new Error('Supabase SDK not loaded');
+}
+
 const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 /* ─── SHARED UTILITIES ─────────────────────────────────────── */
@@ -71,11 +76,23 @@ function showToast(msg, type = 'default') {
 // marketplace re-renders automatically — across all tabs AND devices.
 
 function subscribeToProductChanges() {
+  // NOTE: keep existing behavior (eventually refresh UI), but avoid
+  // re-fetching on every single change burst.
+  // On large catalogs this prevents DB overload and heavy DOM churn.
+  let refreshScheduled = false;
+  const scheduleRefresh = debounce(() => {
+    refreshScheduled = false;
+    console.log('📡 Product change burst — refreshing marketplace...');
+    if (typeof initMarketplace === 'function') initMarketplace();
+  }, 500);
+
   db
     .channel('products-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
-      console.log('📡 Product change detected — refreshing marketplace...');
-      if (typeof initMarketplace === 'function') initMarketplace();
+      // If already scheduled, we just wait for the same debounced refresh.
+      if (refreshScheduled) return;
+      refreshScheduled = true;
+      scheduleRefresh();
     })
     .subscribe();
 }
@@ -98,8 +115,9 @@ async function fetchProfile(userId) {
 
 async function createAccount(type, name, email, password) {
   if (!type || !name || !email || !password) {
-    showAuthError('Please fill in all fields.');
-    return null;
+    const msg = 'Please fill in all fields.';
+    showAuthError(msg);
+    throw new Error(msg);
   }
 
   const { data: signUpData, error: signUpError } = await db.auth.signUp({
@@ -109,26 +127,35 @@ async function createAccount(type, name, email, password) {
   });
 
   if (signUpError) {
-    if (signUpError.message.toLowerCase().includes('already registered')) {
-      showAuthError('An account with that email already exists. Please log in.');
-    } else {
-      showAuthError(signUpError.message);
-    }
-    return null;
+    const msg = signUpError.message.toLowerCase().includes('already registered')
+      ? 'An account with that email already exists. Please log in.'
+      : signUpError.message;
+    showAuthError(msg);
+    throw new Error(msg);
   }
 
   const user = signUpData.user;
+  if (!user) {
+    // Supabase returns no user when email confirmation is required —
+    // the account was created but is pending confirmation.
+    showToast(`Account created! Check your inbox to confirm your email.`, 'success');
+    return { pending: true, name, type, email };
+  }
 
-  // Upsert profile (safe fallback if DB trigger already created it)
+  // Upsert profile row — safe whether or not the DB trigger already created it.
   const { error: profileError } = await db.from('profiles').upsert({
-    id: user.id,
+    id:         user.id,
     name,
     type,
     email,
-    created_at: new Date().toISOString()
-  });
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'id' });
 
-  if (profileError) console.error('Profile upsert error:', profileError.message);
+  if (profileError) {
+    // Non-fatal: auth account was created. Log and continue.
+    console.error('Profile upsert error:', profileError.message);
+  }
 
   showToast(`Welcome, ${name}! Account created.`, 'success');
   return { ...user, name, type };
@@ -136,21 +163,27 @@ async function createAccount(type, name, email, password) {
 
 async function login(email, password) {
   if (!email || !password) {
-    showAuthError('Please enter your email and password.');
-    return null;
+    const msg = 'Please enter your email and password.';
+    showAuthError(msg);
+    throw new Error(msg);
   }
 
   const { data, error } = await db.auth.signInWithPassword({ email, password });
 
-  if (error) { showAuthError('Invalid email or password.'); return null; }
+  if (error) {
+    const msg = 'Invalid email or password.';
+    showAuthError(msg);
+    throw new Error(msg);
+  }
 
   const profile = await fetchProfile(data.user.id);
   if (!profile) {
-    showAuthError('Account found but profile is missing. Contact support.');
-    return null;
+    const msg = 'Account found but profile is missing. Contact support.';
+    showAuthError(msg);
+    throw new Error(msg);
   }
 
-  // Sync auth to localStorage so brandflow.html guard (legacy) can work.
+  // Sync to localStorage for any legacy guards still reading it.
   try {
     localStorage.setItem('currentUserId', data.user.id);
     localStorage.setItem('currentUserProfile', JSON.stringify({ ...data.user, ...profile }));
@@ -651,35 +684,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   if (page.includes('brandflow')) initAdmin();
 
-  // Auth: login form
-  const loginForm = document.querySelector('.login-form');
-  if (loginForm) {
-    loginForm.addEventListener('submit', async e => {
-      e.preventDefault();
-      const email    = document.getElementById('login-email')?.value.trim()
-                    || document.getElementById('username')?.value.trim();
-      const password = document.getElementById('login-password')?.value
-                    || document.getElementById('password')?.value;
-      await login(email, password);
-    });
-  }
-
-  // Auth: signup form
-  const signupForm = document.querySelector('.signup-form');
-  if (signupForm) {
-    signupForm.addEventListener('submit', async e => {
-      e.preventDefault();
-      const type     = document.body.dataset.userType || 'member';
-      const name     = document.getElementById('brandName')?.value.trim()
-                    || document.getElementById('fullName')?.value.trim();
-      const email    = document.getElementById('email')?.value.trim();
-      const password = document.getElementById('password')?.value;
-      const confirm  = document.getElementById('confirmPassword')?.value;
-
-      if (password !== confirm) { showToast("Passwords don't match", 'error'); return; }
-
-      const user = await createAccount(type, name, email, password);
-      if (user) window.location.href = type === 'brand' ? 'authbrand.html' : 'marketplace.html';
-    });
-  }
+  // Auth pages (login.html, signup.html) bind their own submit handlers
+  // via the AuthLogin / AuthSignup controllers defined in those files.
+  // No fallback listeners needed here.
 });

@@ -119,9 +119,11 @@ app.post('/api/login', (req, res) => {
   }
 });
 
-// Convenience: allow member login to simply redirect to marketplace.
-// This prevents client-side code from navigating to a non-existent file.
-app.get('/login', (req, res) => res.redirect('/marketplace.html'));
+// Auth pages
+app.get('/login',        (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'login.html')));
+app.get('/login.html',   (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'login.html')));
+app.get('/signup',       (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'signup.html')));
+app.get('/signup.html',  (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'signup.html')));
 
 // Serve frontend HTML
 app.get('/', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));

@@ -8,11 +8,7 @@
   <link rel="stylesheet" href="merchmarket.css">
   <style>
     body { padding-top: 90px; }
-    .orders-section {
-      max-width: 1100px;
-      margin: 2rem auto;
-      padding: 0 2rem;
-    }
+    .orders-section { max-width: 1100px; margin: 2rem auto; padding: 0 2rem; }
     .orders-title {
       font-family: 'Syne', sans-serif;
       font-size: 2rem;
@@ -31,9 +27,7 @@
       border-radius: 14px;
       overflow: hidden;
     }
-    .orders-table thead tr {
-      background: rgba(170,111,2,.15);
-    }
+    .orders-table thead tr { background: rgba(170,111,2,.15); }
     .orders-table th {
       padding: 1rem 1.2rem;
       text-align: left;
@@ -62,11 +56,14 @@
       text-transform: uppercase;
       letter-spacing: .04em;
     }
-    .status-badge.shipped     { background: rgba(33,150,243,.15); color: #2196f3; border: 1px solid rgba(33,150,243,.3); }
-    .status-badge.processing  { background: rgba(255,235,59,.15); color: #ffeb3b; border: 1px solid rgba(255,235,59,.3); }
-    .status-badge.delivered   { background: rgba(76,175,80,.15);  color: #4caf50; border: 1px solid rgba(76,175,80,.3);  }
-    .status-badge.pending     { background: rgba(255,152,0,.15);  color: #ff9800; border: 1px solid rgba(255,152,0,.3);  }
-    .status-badge.cancelled   { background: rgba(244,67,54,.12);  color: #f44336; border: 1px solid rgba(244,67,54,.2);  }
+    .status-badge.shipped    { background: rgba(33,150,243,.15); color: #2196f3; border: 1px solid rgba(33,150,243,.3); }
+    .status-badge.active     { background: rgba(33,150,243,.15); color: #2196f3; border: 1px solid rgba(33,150,243,.3); }
+    .status-badge.processing { background: rgba(255,235,59,.15); color: #ffeb3b; border: 1px solid rgba(255,235,59,.3); }
+    .status-badge.confirmed  { background: rgba(33,150,243,.10); color: #64b5f6; border: 1px solid rgba(33,150,243,.2); }
+    .status-badge.completed  { background: rgba(76,175,80,.15);  color: #4caf50; border: 1px solid rgba(76,175,80,.3);  }
+    .status-badge.delivered  { background: rgba(76,175,80,.15);  color: #4caf50; border: 1px solid rgba(76,175,80,.3);  }
+    .status-badge.pending    { background: rgba(255,152,0,.15);  color: #ff9800; border: 1px solid rgba(255,152,0,.3);  }
+    .status-badge.cancelled  { background: rgba(244,67,54,.12);  color: #f44336; border: 1px solid rgba(244,67,54,.2);  }
 
     .empty-orders {
       text-align: center;
@@ -74,11 +71,9 @@
       color: #a0a0a0;
     }
     .empty-orders .icon { font-size: 3.5rem; margin-bottom: 1rem; }
-    .empty-orders a {
-      color: #c47d2e;
-      text-decoration: none;
-      font-weight: 600;
-    }
+    .empty-orders a { color: #c47d2e; text-decoration: none; font-weight: 600; }
+
+    .loading-row td { text-align: center; padding: 3rem; color: #a0a0a0; }
   </style>
 </head>
 <body class="order-body body">
@@ -86,22 +81,22 @@
   <nav class="navbar">
     <div class="logo" onclick="location.href='index.html'">MerchMarket</div>
     <ul class="nav-links" style="list-style:none;">
-      <a href="index.html" style="color:#a0a0a0;text-decoration:none;font-weight:500;">Home</a>
+      <a href="index.html"       style="color:#a0a0a0;text-decoration:none;font-weight:500;">Home</a>
       <a href="marketplace.html" style="color:#a0a0a0;text-decoration:none;font-weight:500;">Marketplace</a>
-      <a href="wishlist.html" style="color:#a0a0a0;text-decoration:none;font-weight:500;">♥ Wishlist</a>
+      <a href="wishlist.html"    style="color:#a0a0a0;text-decoration:none;font-weight:500;">♥ Wishlist</a>
+      <a href="login.html"       class="btn btn-primary" style="font-size:.85rem;padding:.55rem 1.1rem;">Log In</a>
     </ul>
   </nav>
 
   <section class="orders-section">
     <h1 class="orders-title">My Orders</h1>
 
-    <!-- Table structure is now correct: thead for headers, tbody for data rows -->
     <table class="orders-table">
       <thead>
         <tr>
           <th>Order ID</th>
           <th>Product</th>
-          <th>Quantity</th>
+          <th>Qty</th>
           <th>Address</th>
           <th>Date</th>
           <th>Status</th>
@@ -109,36 +104,51 @@
         </tr>
       </thead>
       <tbody id="orders-body">
-        <!-- Dynamic orders injected here by JS -->
-        <!-- Static fallback rows shown if no JS orders exist -->
-        <!-- Static fallback rows removed -->
-
+        <tr class="loading-row">
+          <td colspan="7">Loading your orders…</td>
+        </tr>
       </tbody>
     </table>
   </section>
 
-  <script src="data-store.js"></script>
-  <script src="storage.js"></script>
+  <!-- Supabase SDK must load before merchmarket.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="merchmarket.js"></script>
-  <script src="carousel.js"></script>
+
   <script>
-    /* If the user has real orders in localStorage, show those instead of static rows */
-    document.addEventListener('DOMContentLoaded', () => {
-      const user = getCurrentUser();
-      let realOrders = [];
-      if (user) {
-        const allKeys = Object.keys(localStorage).filter(k => k.startsWith('merchOrders_'));
-        allKeys.forEach(key => {
-          const brandOrders = loadLocal(key, []);
-          brandOrders.forEach(o => {
-            if (o.customer && o.customer.email === user.email) realOrders.push(o);
-          });
-        });
+    document.addEventListener('DOMContentLoaded', async () => {
+      const tbody = document.getElementById('orders-body');
+
+      // Guard: require authenticated user
+      const user = await getCurrentUser();
+      if (!user) {
+        tbody.innerHTML = `
+          <tr><td colspan="7" class="loading-row">
+            <div class="empty-orders">
+              <div class="icon">🔒</div>
+              <p>Please <a href="login.html">log in</a> to view your orders.</p>
+            </div>
+          </td></tr>`;
+        return;
       }
-      if (realOrders.length > 0) {
-        document.querySelectorAll('.static-fallback').forEach(r => r.remove());
+
+      // Delegate to the shared renderMemberOrders() in merchmarket.js
+      // which queries orders + order_items + products from Supabase
+      await renderMemberOrders();
+
+      // If still empty after render, show an empty state
+      if (tbody.querySelectorAll('tr:not(.loading-row)').length === 0) {
+        tbody.innerHTML = `
+          <tr><td colspan="7">
+            <div class="empty-orders">
+              <div class="icon">📦</div>
+              <p>No orders yet. <a href="marketplace.html">Start shopping!</a></p>
+            </div>
+          </td></tr>`;
+      } else {
+        // Remove loading placeholder
+        tbody.querySelector('.loading-row')?.remove();
       }
-      renderMemberOrders();
     });
   </script>
 </body>
