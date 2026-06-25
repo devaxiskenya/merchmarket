@@ -101,16 +101,37 @@ function subscribeToProductChanges() {
 
 function showAuthError(msg) { showToast(msg, 'error'); }
 
-// Fetch the public profile row that mirrors auth.users
+// ── Profile cache ────────────────────────────────────────────────────────────
+// Stores the merged {session.user + profile row} for the lifetime of the page.
+// Eliminates repeated round-trips: profile is fetched at most once per page load.
+let _profileCache = null;
+let _profileFetchPromise = null; // deduplicate concurrent fetches
+
 async function fetchProfile(userId) {
-  const { data, error } = await db
+  // Return cache hit immediately
+  if (_profileCache && _profileCache.id === userId) return _profileCache;
+
+  // Deduplicate: if a fetch is already in-flight, wait for it instead of launching another
+  if (_profileFetchPromise) return _profileFetchPromise;
+
+  _profileFetchPromise = db
     .from('profiles')
     .select('*')
     .eq('id', userId)
-    .single();
+    .single()
+    .then(({ data, error }) => {
+      _profileFetchPromise = null;
+      if (error) { console.error('fetchProfile error:', error.message); return null; }
+      _profileCache = data;
+      return data;
+    });
 
-  if (error) { console.error('fetchProfile error:', error.message); return null; }
-  return data;
+  return _profileFetchPromise;
+}
+
+function clearProfileCache() {
+  _profileCache = null;
+  _profileFetchPromise = null;
 }
 
 async function createAccount(type, name, email, password) {
@@ -213,32 +234,40 @@ async function login(email, password) {
     console.warn('localStorage sync failed:', e);
   }
 
+  // Cache is already set by fetchProfile above — redirect immediately
   window.location.href = profile.type === 'brand' ? '/brandflow.html' : '/marketplace.html';
   return { ...data.user, ...profile };
 }
 
 async function logout() {
+  clearProfileCache();
   await db.auth.signOut();
-  window.location.href = 'index.html';
+  window.location.href = 'login.html';
 }
 
 // Returns the current session user merged with their profile row,
 // or null when no session exists.
+// Uses profile cache — safe to call many times per page without extra DB hits.
 async function getCurrentUser() {
+  // Fast path: cache hit skips both getSession and fetchProfile
+  if (_profileCache) return _profileCache;
+
   const { data: { session } } = await db.auth.getSession();
   if (!session) return null;
+
   const profile = await fetchProfile(session.user.id);
   return profile ? { ...session.user, ...profile } : null;
 }
 
 // Fires on every auth state transition (sign-in, sign-out, token refresh).
-// Individual pages listen for the custom `userReady` event instead of
-// calling getCurrentUser() on every load.
+// On SIGNED_IN: fetchProfile uses the cache so no extra round-trip occurs
+//   when arriving here right after login() already fetched the profile.
+// On SIGNED_OUT: clear cache so the next getCurrentUser() call goes to the DB.
 db.auth.onAuthStateChange(async (event, session) => {
   if (event === 'SIGNED_IN' && session) {
+    // fetchProfile is cache-aware — this is a no-op if login() already ran
     const profile = await fetchProfile(session.user.id);
 
-    // Keep legacy guards in sync with Supabase auth.
     try {
       localStorage.setItem('currentUserId', session.user.id);
       if (profile) localStorage.setItem('currentUserProfile', JSON.stringify({ ...session.user, ...profile }));
@@ -250,11 +279,11 @@ db.auth.onAuthStateChange(async (event, session) => {
   }
 
   if (event === 'SIGNED_OUT') {
+    clearProfileCache();
     try {
       localStorage.removeItem('currentUserId');
       localStorage.removeItem('currentUserProfile');
     } catch (e) {}
-
     window.dispatchEvent(new CustomEvent('userReady', { detail: null }));
   }
 });
@@ -692,21 +721,50 @@ function submitListing(e) {
   showToast('Marketplace uploads are disabled.', 'error');
 }
 
+/* ─── NAV AUTH ─────────────────────────────────────────────── */
+// Renders the correct nav state (Login vs Logout) on every page.
+// Uses getCurrentUser() which is cache-first after the first call.
+
+async function initNavAuth() {
+  const user = await getCurrentUser();
+
+  // All login/logout anchor targets in the nav — identified by data-auth-link attribute.
+  // Each HTML nav must have:
+  //   <a data-auth-link="login"  href="login.html">Log In</a>
+  //   <a data-auth-link="logout" href="#" style="display:none">Log Out</a>
+  const loginLinks  = document.querySelectorAll('[data-auth-link="login"]');
+  const logoutLinks = document.querySelectorAll('[data-auth-link="logout"]');
+
+  if (user) {
+    loginLinks.forEach(el  => { el.style.display = 'none'; });
+    logoutLinks.forEach(el => {
+      el.style.display = '';
+      el.textContent   = `Sign Out`;
+      el.onclick = (e) => { e.preventDefault(); logout(); };
+    });
+  } else {
+    loginLinks.forEach(el  => { el.style.display = ''; });
+    logoutLinks.forEach(el => { el.style.display = 'none'; });
+  }
+}
+
 /* ─── BOOT ─────────────────────────────────────────────────── */
 
 document.addEventListener('DOMContentLoaded', async () => {
-  updateCartBadge();
-
   const page = window.location.pathname.split('/').pop() || 'index.html';
+  const isAuthPage = page.includes('login') || page.includes('signup');
 
-  if (page.includes('marketplace.html')) {
-    console.log('Marketplace page detected — initializing...');
-    await initMarketplace();
+  // Run nav auth + cart badge in parallel — not sequentially
+  if (!isAuthPage) {
+    await Promise.all([
+      initNavAuth(),
+      updateCartBadge()
+    ]);
   }
 
-  if (page.includes('brandflow')) initAdmin();
+  if (page.includes('marketplace')) await initMarketplace();
+  if (page.includes('brandflow'))   initAdmin();
 
   // Auth pages (login.html, signup.html) bind their own submit handlers
   // via the AuthLogin / AuthSignup controllers defined in those files.
-  // No fallback listeners needed here.
 });
