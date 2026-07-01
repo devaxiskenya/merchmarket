@@ -144,7 +144,10 @@ async function createAccount(type, name, email, password) {
   const { data: signUpData, error: signUpError } = await db.auth.signUp({
     email,
     password,
-    options: { data: { name, type } }
+    options: {
+      data: { name, type },
+      emailRedirectTo: 'https://merchmarket.co.ke/verify.html'
+    }
   });
 
   if (signUpError) {
@@ -311,7 +314,9 @@ async function getWishlist() {
   return data;
 }
 
-async function updateCartBadge() {
+// Single canonical badge updater used by all pages and wishlist.js.
+// Exposed on window so wishlist.js (IIFE) can call it instead of its own copy.
+async function updateWishlistBadge() {
   const user = await getCurrentUser();
   let count = 0;
 
@@ -331,6 +336,10 @@ async function updateCartBadge() {
     el.style.display = count > 0 ? 'inline-flex' : 'none';
   });
 }
+
+// Alias — keeps any legacy calls working without changes
+const updateCartBadge = updateWishlistBadge;
+window.updateWishlistBadge = updateWishlistBadge;
 
 // Called from product card "Add to Wishlist" button
 async function addToCart(btn) {
@@ -684,7 +693,7 @@ async function renderMemberOrders() {
       ? items.map(i => String(i.quantity || 1)).join(' + ')
       : '1';
 
-    const total = parseFloat(o.total) || 0;
+    const total = parseFloat(o.total_amount ?? o.total) || 0;
     const date  = o.created_at ? new Date(o.created_at).toLocaleDateString('en-KE') : '—';
 
     return `

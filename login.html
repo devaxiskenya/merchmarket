@@ -331,7 +331,7 @@
         }
 
         const { error } = await db.auth.resetPasswordForEmail(email, {
-          redirectTo: `${location.origin}/login.html`
+          redirectTo: 'https://merchmarket.co.ke/verify.html'
         });
 
         if (error) {

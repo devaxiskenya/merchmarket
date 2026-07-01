@@ -363,6 +363,29 @@
       </div>
     </div>
 
+    <!-- ── VIEW: email confirmation ──────────────────────────── -->
+    <div class="auth-view" id="viewConfirm">
+      <div class="auth-heading" style="padding: 1rem 0;">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">📬</div>
+        <h1>Check your inbox</h1>
+        <p>We sent a confirmation link to <strong id="confirmEmail"></strong>. Click it to activate your account, then log in.</p>
+      </div>
+
+      <div style="background:rgba(196,125,46,.07);border:1px solid rgba(196,125,46,.2);border-radius:10px;padding:1rem 1.2rem;margin-bottom:1.4rem;">
+        <p style="color:var(--accent-light);font-size:.88rem;margin:0;line-height:1.6;">
+          ⚠️ Can't find it? Check your spam folder. The link expires in 24 hours.
+        </p>
+      </div>
+
+      <button class="auth-submit" id="resendBtn" onclick="AuthSignup.resend()">
+        Resend confirmation email
+      </button>
+
+      <div class="auth-footer" style="margin-top:1.2rem;">
+        <a href="login.html" id="confirmLoginLink">Go to Login →</a>
+      </div>
+    </div>
+
   </div><!-- /auth-card -->
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -382,7 +405,11 @@
     ============================================================ */
     const AuthSignup = (() => {
 
-      const VIEWS = ['pick', 'member', 'brand'];
+      const VIEWS = ['pick', 'member', 'brand', 'confirm'];
+
+      // ── state ─────────────────────────────────────────────────── //
+      let _pendingEmail = '';
+      let _pendingType  = 'member';
 
       // ── showView ───────────────────────────────────────────── //
       function showView(name) {
@@ -450,9 +477,17 @@
 
         try {
           const result = await createAccount('member', name, email, password);
-          // result.pending = true when Supabase requires email confirmation
-          // result is a full user object when auto-confirm is enabled (dev mode)
-          setTimeout(() => { window.location.href = 'login.html'; }, 1500);
+          if (result?.pending) {
+            // Supabase requires email confirmation — show confirm view
+            _pendingEmail = email;
+            _pendingType  = 'member';
+            document.getElementById('confirmEmail').textContent = email;
+            document.getElementById('confirmLoginLink').href = 'login.html';
+            showView('confirm');
+          } else {
+            // Auto-confirm enabled (dev) — go straight to login
+            setTimeout(() => { window.location.href = 'login.html'; }, 1200);
+          }
         } catch (err) {
           showError('memberError', err.message || 'Sign up failed. Try again.');
           setLoading('memberBtn', false, 'CREATE ACCOUNT');
@@ -486,7 +521,15 @@
 
         try {
           const result = await createAccount('brand', name, email, password);
-          setTimeout(() => { window.location.href = 'login.html?type=brand'; }, 1500);
+          if (result?.pending) {
+            _pendingEmail = email;
+            _pendingType  = 'brand';
+            document.getElementById('confirmEmail').textContent = email;
+            document.getElementById('confirmLoginLink').href = 'login.html?type=brand';
+            showView('confirm');
+          } else {
+            setTimeout(() => { window.location.href = 'login.html?type=brand'; }, 1200);
+          }
         } catch (err) {
           showError('brandError', err.message || 'Sign up failed. Try again.');
           setLoading('brandBtn', false, 'CREATE BRAND ACCOUNT');
@@ -504,8 +547,26 @@
         document.getElementById('brandForm').addEventListener('submit', handleBrand);
       }
 
+      // ── resend ────────────────────────────────────────────────── //
+      async function resend() {
+        const btn = document.getElementById('resendBtn');
+        if (!_pendingEmail) return;
+        btn.disabled = true;
+        btn.textContent = 'Sending…';
+        const { error } = await db.auth.resend({ type: 'signup', email: _pendingEmail, options: { emailRedirectTo: 'https://merchmarket.co.ke/verify.html' } });
+        if (error) {
+          if (typeof showToast === 'function') showToast(error.message, 'error');
+        } else {
+          if (typeof showToast === 'function') showToast('Confirmation email resent!', 'success');
+        }
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.textContent = 'Resend confirmation email';
+        }, 4000);
+      }
+
       // Public API
-      return { showView, init };
+      return { showView, init, resend };
     })();
 
     document.addEventListener('DOMContentLoaded', AuthSignup.init);

@@ -18,26 +18,11 @@
   // (const db = createClient(SUPABASE_URL, SUPABASE_KEY))
 
   /* ─── wishlist badge ───────────────────────────────────────── */
-
+  // Delegates to updateWishlistBadge() defined in merchmarket.js.
+  // Avoids a duplicate Supabase query and a race condition on the badge count.
   async function updateWishlistBadge() {
-    const user = await getCurrentUser();
-    let count = 0;
-
-    if (user) {
-      const { data } = await db
-        .from('wishlists')
-        .select('quantity')
-        .eq('user_id', user.id);
-      count = (data || []).reduce((s, i) => s + (i.quantity || 1), 0);
-    } else {
-      const local = loadLocal('mm_wishlist_guest', []);
-      count = local.reduce((s, i) => s + (i.quantity || 1), 0);
-    }
-
-    const badge = document.getElementById('wishlist-count');
-    if (badge) {
-      badge.textContent = count;
-      badge.style.display = count > 0 ? 'inline-flex' : 'none';
+    if (typeof window.updateWishlistBadge === 'function') {
+      return window.updateWishlistBadge();
     }
   }
 

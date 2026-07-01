@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MerchMarket — Verifying…</title>
+  <!--
+    INTENTIONALLY MINIMAL — no external fonts, no CSS file, no heavy imports.
+    Goal: token exchange + profile fetch + redirect in < 1s on a 3G connection.
+    This page is never seen for more than a second under normal conditions.
+  -->
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%;background:#0a0a0a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+    .wrap{height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.2rem;padding:2rem;text-align:center}
+    .logo{font-size:1.8rem;font-weight:800;background:linear-gradient(135deg,#c47d2e,#ffd8b5);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+    .msg{color:#a0a0a0;font-size:.95rem;min-height:1.4rem}
+    .spinner{width:36px;height:36px;border:3px solid rgba(196,125,46,.2);border-top-color:#c47d2e;border-radius:50%;animation:spin .7s linear infinite}
+    .error-box{display:none;background:rgba(244,67,54,.08);border:1px solid rgba(244,67,54,.25);border-radius:12px;padding:1.1rem 1.4rem;max-width:340px;color:#ef9a9a;font-size:.88rem;line-height:1.6}
+    .retry{display:none;margin-top:.8rem;padding:.7rem 1.4rem;background:linear-gradient(135deg,#c47d2e,#ffd8b5);color:#0a0a0a;border:none;border-radius:10px;font-weight:700;font-size:.9rem;cursor:pointer}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo">MerchMarket</div>
+    <div class="spinner" id="spinner"></div>
+    <p class="msg" id="msg">Verifying your account…</p>
+    <div class="error-box" id="errorBox"></div>
+    <button class="retry" id="retryBtn" onclick="location.href='login.html'">Go to Login</button>
+  </div>
+
+  <!-- Supabase SDK — only dependency, loaded from CDN with crossorigin for speed -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js" crossorigin="anonymous"></script>
+
+  <script>
+    /* ============================================================
+       VERIFY.HTML — email confirmation + password reset handler
+       
+       Flow:
+         1. Parse token_hash + type from URL (Supabase appends these)
+         2. Call verifyOtp() to exchange for a live session — 1 round trip
+         3. Fetch profile row to determine user type — uses cache
+         4. Redirect: brand → /brandflow.html, member → /marketplace.html
+         5. On any error → show message + "Go to Login" button
+    ============================================================ */
+
+    const SUPABASE_URL = 'https://omyzcnizwxumvookotsy.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_2Dvox3zHhG4WG7An-sn0tQ_eZ9z6xh8';
+    const DOMAIN       = 'https://merchmarket.co.ke';
+
+    const db  = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const msg = document.getElementById('msg');
+    const spinner   = document.getElementById('spinner');
+    const errorBox  = document.getElementById('errorBox');
+    const retryBtn  = document.getElementById('retryBtn');
+
+    function showError(text) {
+      spinner.style.display  = 'none';
+      msg.style.display      = 'none';
+      errorBox.style.display = 'block';
+      errorBox.textContent   = text;
+      retryBtn.style.display = 'inline-block';
+    }
+
+    function setMsg(text) {
+      msg.textContent = text;
+    }
+
+    async function verify() {
+      // ── 1. Parse URL params ──────────────────────────────────
+      // Supabase appends ?token_hash=...&type=... for PKCE flow
+      // and #access_token=...&type=... for implicit flow.
+      // Handle both.
+      const params     = new URLSearchParams(location.search);
+      const hashParams = new URLSearchParams(location.hash.replace('#', '?').slice(1));
+
+      const tokenHash  = params.get('token_hash');
+      const type       = params.get('type') || hashParams.get('type');
+      const accessToken  = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
+
+      // ── 2. Exchange token for session ────────────────────────
+      let session = null;
+
+      if (tokenHash && type) {
+        // PKCE flow (default for Supabase v2 with email confirmation)
+        setMsg('Confirming your email…');
+        const { data, error } = await db.auth.verifyOtp({ token_hash: tokenHash, type });
+        if (error) { showError(`Verification failed: ${error.message}`); return; }
+        session = data.session;
+
+      } else if (accessToken && refreshToken) {
+        // Implicit flow fallback (older Supabase config)
+        setMsg('Signing you in…');
+        const { data, error } = await db.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+        if (error) { showError(`Sign-in failed: ${error.message}`); return; }
+        session = data.session;
+
+      } else {
+        // No token at all — user landed here directly
+        showError('No verification token found. Please use the link from your email.');
+        return;
+      }
+
+      if (!session) {
+        showError('Session could not be established. Try clicking the email link again.');
+        return;
+      }
+
+      // ── 3. Fetch profile to determine redirect ───────────────
+      setMsg('Almost there…');
+      const { data: profile } = await db
+        .from('profiles')
+        .select('type')
+        .eq('id', session.user.id)
+        .single();
+
+      // ── 4. Redirect ──────────────────────────────────────────
+      const userType = profile?.type
+                    || session.user.user_metadata?.type
+                    || 'member';
+
+      const dest = userType === 'brand'
+        ? `${DOMAIN}/brandflow.html`
+        : `${DOMAIN}/marketplace.html`;
+
+      setMsg('Redirecting…');
+
+      // Replace current history entry so back button doesn't return to verify.html
+      window.location.replace(dest);
+    }
+
+    // Kick off immediately — don't wait for DOMContentLoaded,
+    // the DOM we need (msg, spinner) is already parsed by the time
+    // this script runs since it's at the bottom of body.
+    verify().catch(err => {
+      console.error('verify error:', err);
+      showError('Something went wrong. Please try logging in manually.');
+    });
+  </script>
+</body>
+</html>

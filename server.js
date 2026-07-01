@@ -1,9 +1,6 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
-const { createClient } = require('@supabase/supabase-js');
-
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 
@@ -66,58 +63,10 @@ app.patch('/api/db/merge', (req, res) => {
   }
 });
 
-// -------- Admin auth (server-side) --------
-// Brand Admin pages should not be accessible by copying/pasting the URL.
-// This uses a minimal server session stored in-memory.
-
-const SESSION_TTL_MS = 1000 * 60 * 60 * 6; // 6 hours
-const sessions = new Map(); // token -> { userId, type, exp }
-
-function createSession(user) {
-  const token = crypto.randomBytes(24).toString('hex');
-  sessions.set(token, { userId: user.id, type: user.type, exp: Date.now() + SESSION_TTL_MS });
-  return token;
-}
-
-function authBrand(req, res, next) {
-  const token = req.cookies?.mm_session || req.query?.mm_session || req.headers['x-mm-session'];
-  if (!token) return res.redirect('/marketplace.html');
-
-  const sess = sessions.get(token);
-  if (!sess) return res.redirect('/marketplace.html');
-  if (Date.now() > sess.exp) {
-    sessions.delete(token);
-    return res.redirect('/marketplace.html');
-  }
-  if (sess.type !== 'brand') return res.redirect('/marketplace.html');
-
-  req.brandUserId = sess.userId;
-  next();
-}
-
-// Parse cookies (needed for session token)
-app.use(require('cookie-parser')());
-
-// Login endpoint to create server session for Brand Admin
-// Frontend can call this after login. For backward compatibility, we also accept
-// currentUserId + users payload.
-app.post('/api/login', (req, res) => {
-  try {
-    const { email, password, user } = req.body || {};
-    // Guest-mode app keeps users in localStorage; server doesn't know them.
-    // So we rely on the client passing a `user` object.
-    const u = user || null;
-    if (!u || !u.id || u.type !== 'brand') {
-      return res.status(401).json({ error: 'Brand session requires brand user' });
-    }
-
-    const token = createSession(u);
-    res.cookie('mm_session', token, { httpOnly: true, sameSite: 'lax' });
-    return res.json({ ok: true, redirect: '/brandflow.html' });
-  } catch (e) {
-    return res.status(500).json({ error: 'Login failed', details: String(e) });
-  }
-});
+// -------- Brand access --------
+// Brand page access is guarded client-side by Supabase JWT in brandflow.html.
+// The client reads the session, checks profile.type === 'brand', and redirects
+// to login.html?type=brand if not authenticated. No server cookie needed.
 
 // Auth pages
 app.get('/login',        (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'login.html')));
@@ -128,7 +77,7 @@ app.get('/signup.html',  (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'signu
 // Serve frontend HTML
 app.get('/', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 app.get('/marketplace.html', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'marketplace.html')));
-app.get('/brandflow.html', authBrand, (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'brandflow.html')));
+app.get('/brandflow.html', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'brandflow.html')));
 app.get('/wishlist.html', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'wishlist.html')));
 app.get('/cart.html', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'cart.html')));
 app.get('/orders.html', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'orders.html')));

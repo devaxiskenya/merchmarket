@@ -55,8 +55,12 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Search orders (debounced)
+  // debounce() is defined in merchmarket.js — use a local fallback in case load order shifts
+  const _debounce = (typeof debounce === 'function') ? debounce : (fn, ms) => {
+    let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+  };
   document.getElementById('orders-search')?.addEventListener('input',
-    debounce(() => loadOrdersTab(), 300)
+    _debounce(() => loadOrdersTab(), 300)
   );
 
   // Save payment details
@@ -84,7 +88,7 @@ async function loadOrdersTab() {
   const { data: orders, error } = await db
     .from('orders')
     .select(`
-      id, total, status, location, created_at,
+      id, total_amount, status, location, created_at,
       profiles!orders_user_id_fkey (id, name, email),
       order_items (
         id, quantity, sku, unit_price,
@@ -123,7 +127,7 @@ function calculateOrderStats(orders) {
   const active    = orders.filter(o => o.status === 'active').length;
   const completed = orders.filter(o => o.status === 'completed').length;
   const cancelled = orders.filter(o => o.status === 'cancelled').length;
-  const revenue   = orders.reduce((sum, o) => sum + (parseFloat(o.total) || 0), 0);
+  const revenue   = orders.reduce((sum, o) => sum + (parseFloat(o.total_amount) || 0), 0);
   return { total, pending, confirmed, active, completed, cancelled, revenue };
 }
 
@@ -159,7 +163,7 @@ function renderOrdersTable(orders) {
       ? items.map(i => i.products?.name || i.sku || '—').join(', ')
       : '—';
     const date  = order.created_at ? new Date(order.created_at).toLocaleDateString('en-KE') : '—';
-    const total = parseFloat(order.total) || 0;
+    const total = parseFloat(order.total_amount) || 0;
     const st    = order.status || 'pending';
 
     return `
@@ -187,7 +191,7 @@ async function viewOrder(orderId) {
   const { data: order, error } = await db
     .from('orders')
     .select(`
-      id, total, status, location, created_at,
+      id, total_amount, status, location, created_at,
       profiles!orders_user_id_fkey (name, email),
       order_items (
         quantity, sku, unit_price,
@@ -205,7 +209,7 @@ async function viewOrder(orderId) {
   const cust  = order.profiles || {};
   const items = order.order_items || [];
   const date  = order.created_at ? new Date(order.created_at).toLocaleDateString('en-KE') : '—';
-  const total = parseFloat(order.total) || 0;
+  const total = parseFloat(order.total_amount) || 0;
   const st    = order.status || 'pending';
 
   const itemsHtml = items.length
@@ -708,7 +712,7 @@ async function loadCustomersTab() {
   // Aggregate customer spend from orders for this brand
   const { data: orders, error } = await db
     .from('orders')
-    .select('total, profiles!orders_user_id_fkey(id, name, email)')
+    .select('total_amount, profiles!orders_user_id_fkey(id, name, email)')
     .eq('brand_id', brand.id);
 
   if (error) { console.error('loadCustomersTab error:', error.message); return; }
@@ -720,7 +724,7 @@ async function loadCustomersTab() {
     const email = prof.email || 'unknown';
     if (!map[email]) map[email] = { name: prof.name || '—', email, orders: 0, total: 0 };
     map[email].orders++;
-    map[email].total += parseFloat(o.total) || 0;
+    map[email].total += parseFloat(o.total_amount) || 0;
   });
 
   const customers = Object.values(map);
