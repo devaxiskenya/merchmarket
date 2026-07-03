@@ -743,6 +743,7 @@ async function initNavAuth() {
   //   <a data-auth-link="logout" href="#" style="display:none">Log Out</a>
   const loginLinks  = document.querySelectorAll('[data-auth-link="login"]');
   const logoutLinks = document.querySelectorAll('[data-auth-link="logout"]');
+  const memberLinks = document.querySelectorAll('[data-auth-link="member"]');
 
   if (user) {
     loginLinks.forEach(el  => { el.style.display = 'none'; });
@@ -751,9 +752,12 @@ async function initNavAuth() {
       el.textContent   = `Sign Out`;
       el.onclick = (e) => { e.preventDefault(); logout(); };
     });
+    // Account link only makes sense for member accounts — brands use Brand Admin.
+    memberLinks.forEach(el => { el.style.display = (user.type === 'member') ? '' : 'none'; });
   } else {
     loginLinks.forEach(el  => { el.style.display = ''; });
     logoutLinks.forEach(el => { el.style.display = 'none'; });
+    memberLinks.forEach(el => { el.style.display = 'none'; });
   }
 }
 

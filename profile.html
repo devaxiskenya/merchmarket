@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Account — MerchMarket</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="merchmarket.css">
+  <style>
+    body { padding-top: 0; }
+    .account-page {
+      max-width: 900px;
+      margin: 6.5rem auto 3rem;
+      padding: 0 2rem;
+    }
+    .account-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #FFD8B5, #c47d2e);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 1.8rem;
+    }
+    .account-grid {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 2rem;
+      align-items: start;
+    }
+    @media (max-width: 800px) { .account-grid { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(170,111,2,.3);
+      border-radius: 16px;
+      padding: 1.8rem;
+    }
+
+    /* ── Avatar card ── */
+    .avatar-card { text-align: center; }
+    .avatar-wrap {
+      width: 140px; height: 140px;
+      border-radius: 50%;
+      margin: 0 auto 1.2rem;
+      position: relative;
+      overflow: hidden;
+      background: linear-gradient(135deg,#c47d2e,#ffd8b5);
+      display: flex; align-items: center; justify-content: center;
+      border: 3px solid rgba(196,125,46,.4);
+    }
+    .avatar-wrap img { width: 100%; height: 100%; object-fit: cover; }
+    .avatar-initial {
+      font-family: 'Syne', sans-serif;
+      font-size: 3rem; font-weight: 800; color: #0a0a0a;
+    }
+    .avatar-upload-btn {
+      display: inline-block;
+      padding: .6rem 1.2rem;
+      border: 1px solid rgba(170,111,2,.4);
+      border-radius: 10px;
+      background: rgba(255,255,255,.05);
+      color: #ffd8b5;
+      font-size: .85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .avatar-upload-btn:hover { background: rgba(196,125,46,.15); border-color: var(--accent); }
+    .member-name { font-family:'Syne',sans-serif; font-size:1.2rem; font-weight:700; color:#ffd8b5; margin-top:1rem; }
+    .member-since { color:#a0a0a0; font-size:.82rem; margin-top:.3rem; }
+
+    .quick-links { margin-top: 1.6rem; display: flex; flex-direction: column; gap: .6rem; }
+    .quick-link {
+      display: flex; align-items: center; gap: .6rem;
+      padding: .75rem 1rem;
+      border: 1px solid rgba(170,111,2,.25);
+      border-radius: 10px;
+      color: #d9d9d9;
+      font-size: .9rem;
+      transition: all .2s;
+    }
+    .quick-link:hover { border-color: var(--accent); color: #ffd8b5; background: rgba(196,125,46,.08); }
+
+    /* ── Details form ── */
+    .section-heading {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #ffd8b5;
+      margin-bottom: 1.2rem;
+    }
+    .field-row { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
+    @media (max-width:520px){ .field-row{ grid-template-columns:1fr; } }
+
+    .divider-line { border:none; border-top:1px solid rgba(255,255,255,.08); margin:1.8rem 0; }
+
+    .save-row { display:flex; gap:1rem; justify-content:flex-end; margin-top:1.6rem; flex-wrap:wrap; }
+    .save-row .btn { min-width: 160px; }
+
+    .field-hint { color:#666; font-size:.78rem; margin-top:.35rem; }
+  </style>
+</head>
+<body class="body">
+
+  <nav>
+    <div class="logo" onclick="location.href='index.html'">MerchMarket</div>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="marketplace.html">Marketplace</a>
+      <a href="wishlist.html">♡ Wishlist</a>
+      <a href="orders.html">My Orders</a>
+      <a href="profile.html" class="active">👤 Account</a>
+      <a href="login.html" class="btn btn-primary" style="font-size:.85rem;padding:.55rem 1.1rem;" data-auth-link="login">Log In</a>
+      <a href="#" class="btn btn-primary" style="font-size:.85rem;padding:.55rem 1.1rem;display:none;" data-auth-link="logout">Sign Out</a>
+    </div>
+  </nav>
+
+  <div class="account-page">
+    <div class="account-title">My Account</div>
+
+    <div id="guardMsg" style="display:none;color:#a0a0a0;padding:3rem;text-align:center;">
+      Please <a href="login.html" style="color:#c47d2e;font-weight:600;">log in</a> to view your account.
+    </div>
+
+    <div class="account-grid" id="accountGrid" style="display:none;">
+
+      <!-- LEFT: Avatar + quick links -->
+      <div class="panel avatar-card">
+        <div class="avatar-wrap" id="avatarWrap">
+          <span class="avatar-initial" id="avatarInitial">?</span>
+        </div>
+        <input type="file" id="avatarFile" accept="image/*" style="display:none">
+        <button type="button" class="avatar-upload-btn" id="avatarBtn">📷 Change photo</button>
+
+        <div class="member-name" id="memberNameDisplay">—</div>
+        <div class="member-since" id="memberSince">—</div>
+
+        <div class="quick-links">
+          <a href="orders.html" class="quick-link">📦 Order History</a>
+          <a href="wishlist.html" class="quick-link">♡ My Wishlist</a>
+          <a href="marketplace.html" class="quick-link">🛍️ Continue Shopping</a>
+        </div>
+      </div>
+
+      <!-- RIGHT: Details form -->
+      <div class="panel">
+        <div class="section-heading">Personal Details</div>
+        <form id="detailsForm">
+          <div class="field-row">
+            <div class="form-group">
+              <label>Full Name</label>
+              <input type="text" id="fieldName" required>
+            </div>
+            <div class="form-group">
+              <label>Email</label>
+              <input type="email" id="fieldEmail" disabled style="opacity:.6;cursor:not-allowed;">
+              <div class="field-hint">Contact support to change your email address.</div>
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="form-group">
+              <label>Phone Number</label>
+              <input type="tel" id="fieldPhone" placeholder="e.g. 07xx xxx xxx">
+            </div>
+            <div class="form-group">
+              <label>Default Delivery Address</label>
+              <input type="text" id="fieldAddress" placeholder="e.g. Kilimani, Nairobi">
+            </div>
+          </div>
+          <div class="save-row">
+            <button type="submit" class="btn btn-primary" id="saveDetailsBtn">Save Changes</button>
+          </div>
+        </form>
+
+        <hr class="divider-line">
+
+        <div class="section-heading">Change Password</div>
+        <form id="passwordForm">
+          <div class="field-row">
+            <div class="form-group">
+              <label>New Password</label>
+              <input type="password" id="fieldNewPassword" minlength="8" placeholder="Min 8 characters" autocomplete="new-password">
+            </div>
+            <div class="form-group">
+              <label>Confirm New Password</label>
+              <input type="password" id="fieldConfirmPassword" minlength="8" placeholder="Repeat password" autocomplete="new-password">
+            </div>
+          </div>
+          <div class="save-row">
+            <button type="submit" class="btn btn-secondary" id="savePasswordBtn">Update Password</button>
+          </div>
+        </form>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="merchmarket.js"></script>
+
+  <script>
+    let _currentProfile = null;
+    let _pendingAvatarDataUrl = null;
+
+    function initials(name) {
+      if (!name) return '?';
+      return name.trim().split(/\s+/).slice(0,2).map(w => w[0]?.toUpperCase() || '').join('');
+    }
+
+    function renderAvatar(url, name) {
+      const wrap = document.getElementById('avatarWrap');
+      if (url) {
+        wrap.innerHTML = `<img src="${url}" alt="Avatar">`;
+      } else {
+        wrap.innerHTML = `<span class="avatar-initial">${initials(name)}</span>`;
+      }
+    }
+
+    async function loadAccount() {
+      const user = await getCurrentUser();
+      if (!user || user.type !== 'member') {
+        // Brands manage their identity in Brand Admin, not here.
+        document.getElementById('guardMsg').style.display = 'block';
+        if (user && user.type === 'brand') {
+          document.getElementById('guardMsg').innerHTML =
+            'Brand accounts manage details in <a href="brandflow.html" style="color:#c47d2e;font-weight:600;">Brand Admin</a>.';
+        }
+        return;
+      }
+
+      _currentProfile = user;
+      document.getElementById('accountGrid').style.display = 'grid';
+
+      document.getElementById('fieldName').value    = user.name || '';
+      document.getElementById('fieldEmail').value   = user.email || '';
+      document.getElementById('fieldPhone').value   = user.phone || '';
+      document.getElementById('fieldAddress').value = user.address || '';
+      document.getElementById('memberNameDisplay').textContent = user.name || 'Member';
+      document.getElementById('memberSince').textContent = user.created_at
+        ? 'Member since ' + new Date(user.created_at).toLocaleDateString('en-KE', { year:'numeric', month:'long' })
+        : '';
+
+      renderAvatar(user.avatar_url, user.name);
+    }
+
+    // ── Avatar upload ──
+    document.getElementById('avatarBtn').addEventListener('click', () => {
+      document.getElementById('avatarFile').click();
+    });
+
+    document.getElementById('avatarFile').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      if (file.size > 2 * 1024 * 1024) {
+        showToast('Image too large — please use one under 2MB.', 'error');
+        e.target.value = '';
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        _pendingAvatarDataUrl = ev.target.result;
+        renderAvatar(_pendingAvatarDataUrl, _currentProfile?.name);
+
+        // Save immediately — avatar changes shouldn't wait on the rest of the form
+        const { error } = await db
+          .from('profiles')
+          .update({ avatar_url: _pendingAvatarDataUrl, updated_at: new Date().toISOString() })
+          .eq('id', _currentProfile.id);
+
+        if (error) {
+          showToast('Failed to update photo: ' + error.message, 'error');
+          console.error('avatar update error:', error.message);
+        } else {
+          showToast('Profile photo updated!', 'success');
+          clearProfileCache();
+          _currentProfile = await getCurrentUser();
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // ── Save details ──
+    document.getElementById('detailsForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('saveDetailsBtn');
+      const name    = document.getElementById('fieldName').value.trim();
+      const phone   = document.getElementById('fieldPhone').value.trim();
+      const address = document.getElementById('fieldAddress').value.trim();
+
+      if (!name) { showToast('Name cannot be empty.', 'error'); return; }
+
+      btn.disabled = true;
+      const originalLabel = btn.textContent;
+      btn.textContent = 'Saving…';
+
+      const { error } = await db
+        .from('profiles')
+        .update({ name, phone, address, updated_at: new Date().toISOString() })
+        .eq('id', _currentProfile.id);
+
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+
+      if (error) {
+        showToast('Failed to save: ' + error.message, 'error');
+        console.error('profile update error:', error.message);
+        return;
+      }
+
+      showToast('Account details saved!', 'success');
+      clearProfileCache();
+      _currentProfile = await getCurrentUser();
+      document.getElementById('memberNameDisplay').textContent = _currentProfile.name || 'Member';
+    });
+
+    // ── Change password ──
+    document.getElementById('passwordForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const pw  = document.getElementById('fieldNewPassword').value;
+      const pw2 = document.getElementById('fieldConfirmPassword').value;
+
+      if (!pw || !pw2) { showToast('Please fill in both password fields.', 'error'); return; }
+      if (pw !== pw2)   { showToast('Passwords do not match.', 'error'); return; }
+      if (pw.length < 8) { showToast('Password must be at least 8 characters.', 'error'); return; }
+
+      const btn = document.getElementById('savePasswordBtn');
+      btn.disabled = true;
+      btn.textContent = 'Updating…';
+
+      const { error } = await db.auth.updateUser({ password: pw });
+
+      btn.disabled = false;
+      btn.textContent = 'Update Password';
+
+      if (error) {
+        showToast('Failed to update password: ' + error.message, 'error');
+        return;
+      }
+
+      document.getElementById('fieldNewPassword').value = '';
+      document.getElementById('fieldConfirmPassword').value = '';
+      showToast('Password updated successfully!', 'success');
+    });
+
+    document.addEventListener('DOMContentLoaded', loadAccount);
+  </script>
+
+</body>
+</html>

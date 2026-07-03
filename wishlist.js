@@ -288,6 +288,8 @@
 
     let ordersCreated = 0;
 
+    const deliveryLocation = (user.address && user.address.trim()) || 'Nairobi, Kenya';
+
     for (const [seller, items] of Object.entries(bySeller)) {
       const brandId = brandMap[seller];
       if (!brandId) continue;
@@ -302,7 +304,7 @@
           brand_id:   brandId,
           total_amount: total.toFixed(2),
           status:     'pending',
-          location:   'Nairobi, Kenya',
+          location:   deliveryLocation,
           created_at: new Date().toISOString()
         })
         .select('id')

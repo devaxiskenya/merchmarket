@@ -42,11 +42,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Add item button
-  document.getElementById('add-inventory')?.addEventListener('click', e => {
-    e.preventDefault();
-    showInventoryModal(null);
-  });
+  // Add item button (hardened)
+  const addBtn = document.getElementById('add-inventory');
+  if (!addBtn) {
+    console.error('brandflow-admin: missing #add-inventory');
+  } else {
+    addBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        await showInventoryModal(null);
+      } catch (err) {
+        console.error('Add Item click failed:', err);
+        showToast('Failed to open Add Item modal: ' + (err?.message || String(err)), 'error');
+      }
+    });
+  }
+
 
   // Refresh orders
   document.getElementById('refresh-orders')?.addEventListener('click', () => {
