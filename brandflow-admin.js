@@ -34,6 +34,20 @@ function tabSwitch(tabName) {
 document.addEventListener('DOMContentLoaded', () => {
   console.log('Brandflow admin ready (Supabase mode)');
 
+  // Native <dialog> light-dismiss + cleanup — bound once, not on every open.
+  // Clicking the backdrop (e.target === dialog itself, not its content) closes it.
+  const inventoryDialog = document.getElementById('inventory-modal');
+  if (inventoryDialog) {
+    inventoryDialog.addEventListener('click', (e) => {
+      if (e.target === inventoryDialog) inventoryDialog.close();
+    });
+    inventoryDialog.addEventListener('close', () => {
+      inventoryDialog.innerHTML = '';
+    });
+  } else {
+    console.error('brandflow-admin: missing #inventory-modal dialog');
+  }
+
   // Nav tab clicks
   document.querySelectorAll('.nav-tab').forEach(tab => {
     tab.addEventListener('click', e => {
@@ -231,54 +245,49 @@ async function viewOrder(orderId) {
   if (!modal) return;
 
   modal.innerHTML = `
-    <div class="modal-overlay" onclick="closeModal()">
-      <div class="modal-content" onclick="event.stopPropagation()" style="
-        max-width:560px;max-height:90vh;overflow-y:auto;
-        background:white;border-radius:20px;padding:2.5rem;
-        box-shadow:0 25px 60px rgba(0,0,0,.3);position:relative;
-        animation:modalSlideIn .3s cubic-bezier(.4,0,.2,1);
-      ">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;">
-          <h2 style="margin:0;font-size:1.6rem;font-weight:700;color:#1a1a1a;">Order #${order.id}</h2>
-          <button onclick="closeModal()" style="background:none;border:none;font-size:1.6rem;cursor:pointer;color:#999;">×</button>
-        </div>
-
-        <div style="display:flex;flex-direction:column;gap:1.2rem;color:#333;font-size:.95rem;">
-          <div style="background:#f8f9fa;border-radius:12px;padding:1.2rem;">
-            <h4 style="margin:0 0 .6rem 0;color:#667eea;">👤 Customer</h4>
-            <p><strong>Name:</strong> ${cust.name || '—'}</p>
-            <p><strong>Email:</strong> ${cust.email || '—'}</p>
-          </div>
-          <div style="background:#f8f9fa;border-radius:12px;padding:1.2rem;">
-            <h4 style="margin:0 0 .6rem 0;color:#667eea;">📦 Items</h4>
-            <ul style="padding-left:1.2rem;">${itemsHtml}</ul>
-          </div>
-          <div style="background:#f8f9fa;border-radius:12px;padding:1.2rem;">
-            <h4 style="margin:0 0 .6rem 0;color:#667eea;">📍 Shipping</h4>
-            <p><strong>Location:</strong> ${order.location || 'Nairobi, Kenya'}</p>
-            <p><strong>Date:</strong> ${date}</p>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center;background:#f8f9fa;border-radius:12px;padding:1.2rem;">
-            <p><strong>Status:</strong> <span class="status ${st}">${st.toUpperCase()}</span></p>
-            <div style="font-size:1.3rem;font-weight:700;color:#1a1a1a;">KES ${total.toLocaleString()}</div>
-          </div>
-        </div>
-
-        <div style="display:flex;gap:1rem;justify-content:flex-end;margin-top:1.5rem;">
-          ${st === 'pending'   ? `<button onclick="updateOrderStatus('${order.id}','confirmed');closeModal();" style="padding:1rem 2rem;border:none;border-radius:12px;background:#4caf50;color:#fff;font-weight:600;cursor:pointer;">Confirm</button>` : ''}
-          ${st === 'confirmed' ? `<button onclick="updateOrderStatus('${order.id}','active');closeModal();"    style="padding:1rem 2rem;border:none;border-radius:12px;background:#2196f3;color:#fff;font-weight:600;cursor:pointer;">Mark Shipped</button>` : ''}
-          <button onclick="closeModal()" style="padding:1rem 2rem;border:none;border-radius:12px;background:#f5f5f5;color:#666;font-weight:600;cursor:pointer;">Close</button>
-        </div>
-
-        <style>
-          @keyframes modalSlideIn { from{opacity:0;transform:translateY(-30px) scale(.95)} to{opacity:1;transform:translateY(0) scale(1)} }
-          .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;display:flex;align-items:center;justify-content:center;padding:2rem;}
-        </style>
+    <div style="
+      max-width:560px;
+      background:white;border-radius:20px;padding:2.5rem;
+      animation:modalSlideIn .3s cubic-bezier(.4,0,.2,1);
+    ">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;">
+        <h2 style="margin:0;font-size:1.6rem;font-weight:700;color:#1a1a1a;">Order #${order.id}</h2>
+        <button onclick="closeModal()" style="background:none;border:none;font-size:1.6rem;cursor:pointer;color:#999;">×</button>
       </div>
+
+      <div style="display:flex;flex-direction:column;gap:1.2rem;color:#333;font-size:.95rem;">
+        <div style="background:#f8f9fa;border-radius:12px;padding:1.2rem;">
+          <h4 style="margin:0 0 .6rem 0;color:#667eea;">👤 Customer</h4>
+          <p><strong>Name:</strong> ${cust.name || '—'}</p>
+          <p><strong>Email:</strong> ${cust.email || '—'}</p>
+        </div>
+        <div style="background:#f8f9fa;border-radius:12px;padding:1.2rem;">
+          <h4 style="margin:0 0 .6rem 0;color:#667eea;">📦 Items</h4>
+          <ul style="padding-left:1.2rem;">${itemsHtml}</ul>
+        </div>
+        <div style="background:#f8f9fa;border-radius:12px;padding:1.2rem;">
+          <h4 style="margin:0 0 .6rem 0;color:#667eea;">📍 Shipping</h4>
+          <p><strong>Location:</strong> ${order.location || 'Nairobi, Kenya'}</p>
+          <p><strong>Date:</strong> ${date}</p>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;background:#f8f9fa;border-radius:12px;padding:1.2rem;">
+          <p><strong>Status:</strong> <span class="status ${st}">${st.toUpperCase()}</span></p>
+          <div style="font-size:1.3rem;font-weight:700;color:#1a1a1a;">KES ${total.toLocaleString()}</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:1rem;justify-content:flex-end;margin-top:1.5rem;">
+        ${st === 'pending'   ? `<button onclick="updateOrderStatus('${order.id}','confirmed');closeModal();" style="padding:1rem 2rem;border:none;border-radius:12px;background:#4caf50;color:#fff;font-weight:600;cursor:pointer;">Confirm</button>` : ''}
+        ${st === 'confirmed' ? `<button onclick="updateOrderStatus('${order.id}','active');closeModal();"    style="padding:1rem 2rem;border:none;border-radius:12px;background:#2196f3;color:#fff;font-weight:600;cursor:pointer;">Mark Shipped</button>` : ''}
+        <button onclick="closeModal()" style="padding:1rem 2rem;border:none;border-radius:12px;background:#f5f5f5;color:#666;font-weight:600;cursor:pointer;">Close</button>
+      </div>
+
+      <style>
+        @keyframes modalSlideIn { from{opacity:0;transform:translateY(-30px) scale(.95)} to{opacity:1;transform:translateY(0) scale(1)} }
+      </style>
     </div>`;
 
-  modal.classList.add('active');
-  document.body.style.overflow = 'hidden';
+  modal.showModal();
 }
 
 /* ─── ORDER STATUS UPDATE ─────────────────────────────────── */
@@ -382,19 +391,17 @@ async function showInventoryModal(productId = null) {
   };
 
   modal.innerHTML = `
-    <div class="modal-overlay" onclick="closeModal()">
-      <div class="modal-content" onclick="event.stopPropagation()" style="
-        max-width:580px;max-height:90vh;overflow-y:auto;
-        background:white;border-radius:20px;padding:2.5rem;
-        box-shadow:0 25px 60px rgba(0,0,0,.3);
-        animation:modalSlideIn .3s cubic-bezier(.4,0,.2,1);
-      ">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem;">
-          <h2 style="margin:0;font-size:1.8rem;font-weight:700;color:#1a1a1a;">${isEdit ? 'Edit Item' : 'Add New Item'}</h2>
-          <button onclick="closeModal()" style="background:none;border:none;font-size:1.6rem;cursor:pointer;color:#999;">×</button>
-        </div>
+    <div style="
+      max-width:580px;
+      background:white;border-radius:20px;padding:2.5rem;
+      animation:modalSlideIn .3s cubic-bezier(.4,0,.2,1);
+    ">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem;">
+        <h2 style="margin:0;font-size:1.8rem;font-weight:700;color:#1a1a1a;">${isEdit ? 'Edit Item' : 'Add New Item'}</h2>
+        <button type="button" onclick="closeModal()" style="background:none;border:none;font-size:1.6rem;cursor:pointer;color:#999;">×</button>
+      </div>
 
-        <form id="inventory-form" style="display:flex;flex-direction:column;gap:1.4rem;">
+      <form id="inventory-form" style="display:flex;flex-direction:column;gap:1.4rem;">
 
           <div>
             <label style="display:block;margin-bottom:.4rem;font-weight:600;color:#333;">Item Name *</label>
@@ -485,14 +492,11 @@ async function showInventoryModal(productId = null) {
 
         <style>
           @keyframes modalSlideIn { from{opacity:0;transform:translateY(-30px) scale(.95)} to{opacity:1;transform:none} }
-          .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;display:flex;align-items:center;justify-content:center;padding:2rem;}
           #inventory-form input:focus, #inventory-form select:focus {outline:none;border-color:#c47d2e !important;box-shadow:0 0 0 3px rgba(196,125,46,.15);}
         </style>
-      </div>
-    </div>`;
+      </div>`;
 
-  modal.classList.add('active');
-  document.body.style.overflow = 'hidden';
+  modal.showModal();
 
   // ─── Image handling ───
   const fileInput   = document.getElementById('item-image-files');
@@ -788,8 +792,9 @@ async function resetDatabase() {
 
 function closeModal() {
   const modal = document.getElementById('inventory-modal');
-  if (modal) { modal.innerHTML = ''; modal.classList.remove('active'); }
-  document.body.style.overflow = '';
+  // .close() fires the 'close' event, which clears innerHTML (bound once at boot).
+  // No manual class toggling or body.style.overflow bookkeeping needed anymore.
+  if (modal && modal.open) modal.close();
 }
 
 /* ─── HELPERS ─────────────────────────────────────────────── */

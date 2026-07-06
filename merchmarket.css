@@ -987,6 +987,24 @@ nav, .navbar, .admin-navbar {
 }
 .close-btn:hover { color: var(--text-primary); }
 
+/* Native <dialog>-based modals — replaces the old div+class-toggle pattern
+   for brandflow-admin (Add/Edit Item, View Order). Browser handles show/hide,
+   backdrop, ESC-to-close, and focus trapping — no more silent open() failures. */
+.mm-dialog {
+    border: none;
+    border-radius: var(--radius-lg);
+    padding: 0;
+    max-width: 580px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    background: transparent;
+}
+.mm-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.82);
+}
+.mm-dialog:not([open]) { display: none; }
+
 .file-upload {
     border: 2px dashed var(--border-brand);
     border-radius: var(--radius-sm);
