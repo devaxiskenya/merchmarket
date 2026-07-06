@@ -761,6 +761,19 @@ async function initNavAuth() {
   }
 }
 
+/* ─── SHARED BRAND HELPER ──────────────────────────────────── */
+// Returns the current brand's full profile, or null (with a toast) if not
+// a brand. Shared by brandflow-admin.js, add-item.html, and view-order.html
+// so all three pages guard the same way.
+async function getBrandUser() {
+  const user = await getCurrentUser();
+  if (!user || user.type !== 'brand') {
+    showToast('Brand account required', 'error');
+    return null;
+  }
+  return user;
+}
+
 /* ─── BOOT ─────────────────────────────────────────────────── */
 
 document.addEventListener('DOMContentLoaded', async () => {

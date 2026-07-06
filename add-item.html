@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Add Item — MerchMarket</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="merchmarket.css">
+  <style>
+    .item-form-page { max-width: 720px; margin: 0 auto; }
+    .item-panel {
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(170,111,2,.3);
+      border-radius: 16px;
+      padding: 2rem 2.2rem;
+    }
+    .form-actions {
+      display: flex;
+      gap: 1rem;
+      justify-content: flex-end;
+      margin-top: 1.6rem;
+      flex-wrap: wrap;
+    }
+    .form-actions .btn { min-width: 140px; }
+    .image-picker-btn {
+      width: 100%;
+      padding: .8rem 1.2rem;
+      border: 2px dashed rgba(170,111,2,.4);
+      border-radius: 12px;
+      background: rgba(255,255,255,.03);
+      color: var(--accent-light);
+      font-weight: 600;
+      font-size: .95rem;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .image-picker-btn:hover { background: rgba(196,125,46,.1); border-color: var(--accent); }
+    #image-preview-list { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .9rem; }
+    .img-thumb { position: relative; width: 72px; height: 72px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(170,111,2,.3); flex-shrink: 0; }
+    .img-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .img-rm-btn {
+      position: absolute; top: 2px; right: 2px; width: 20px; height: 20px;
+      border: none; border-radius: 50%; background: #f44336; color: #fff;
+      font-size: 12px; cursor: pointer; line-height: 1;
+    }
+    .field-hint { color: #666; font-size: .8rem; margin-top: .4rem; }
+  </style>
+</head>
+<body class="admin-body">
+
+<nav class="admin-navbar">
+  <div class="logo" onclick="location.href='index.html'">
+    MerchMarket
+    <span style="font-size:.9rem;font-weight:400;opacity:.7;">Brand Admin</span>
+  </div>
+  <ul class="admin-nav-links">
+    <li><a href="brandflow.html?tab=inventory" style="color:#a0a0a0;font-size:.85rem;padding:1rem;">← Back to Inventory</a></li>
+    <li><a href="#" data-auth-link="logout" style="color:#f44336;font-size:.85rem;padding:1rem;font-weight:600;">Sign Out</a></li>
+  </ul>
+</nav>
+
+<main class="admin-main item-form-page" style="padding-top:6rem;">
+  <div class="module-header">
+    <h1 id="pageTitle">Add New Item</h1>
+  </div>
+
+  <div id="guardMsg" style="display:none;color:#a0a0a0;padding:3rem;text-align:center;">
+    Please <a href="login.html?type=brand" style="color:#c47d2e;font-weight:600;">log in as a brand</a> to manage inventory.
+  </div>
+
+  <div class="item-panel" id="formPanel" style="display:none;">
+    <form id="itemForm" style="display:flex;flex-direction:column;gap:1.4rem;">
+
+      <div class="form-group">
+        <label>Item Name *</label>
+        <input type="text" id="item-name" required placeholder="e.g. Custom Logo Hoodie">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>SKU *</label>
+          <input type="text" id="item-sku" required placeholder="e.g. HOD-001">
+        </div>
+        <div class="form-group">
+          <label>Stock *</label>
+          <input type="number" id="item-stock" min="0" required value="0">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Price (KES) *</label>
+        <input type="number" id="item-price" min="0" step="0.01" required placeholder="e.g. 2500">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Wear Category</label>
+          <select id="item-wear-category">
+            <option value="official">Official Wear</option>
+            <option value="street">Street Wear</option>
+            <option value="casual">Casual Wear</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Item Type</label>
+          <select id="item-type">
+            <option value="torso">Torso</option>
+            <option value="trunks">Trunks</option>
+            <option value="innies">Innies</option>
+            <option value="shoes">Shoes</option>
+            <option value="socks">Socks</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Condition</label>
+        <select id="item-condition">
+          <option value="new">New</option>
+          <option value="like_new">Like New</option>
+          <option value="used">Used</option>
+          <option value="vintage">Vintage</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Tags (comma-separated)</label>
+        <input type="text" id="item-tags" placeholder="e.g. trendy, limited, summer">
+      </div>
+
+      <div class="form-group">
+        <label>Images</label>
+        <input type="file" id="item-image-files" accept="image/*" multiple style="display:none">
+        <button type="button" id="btn-select-images" class="image-picker-btn">📁 Choose images from device</button>
+        <div id="image-preview-list"></div>
+        <div class="field-hint">Images are stored as base64 in Supabase. For production, use Supabase Storage instead.</div>
+      </div>
+
+      <div class="form-actions">
+        <a href="brandflow.html?tab=inventory" class="btn btn-secondary">Cancel</a>
+        <button type="button" id="deleteBtn" class="btn btn-danger" style="display:none;">Delete Item</button>
+        <button type="submit" id="submitBtn" class="btn btn-primary">Add Item</button>
+      </div>
+    </form>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="merchmarket.js"></script>
+
+<script>
+  let currentImages = [];
+  let editingId = null;
+
+  function renderPreviews() {
+    const list = document.getElementById('image-preview-list');
+    list.innerHTML = currentImages.map((src, idx) => `
+      <div class="img-thumb">
+        <img src="${src}" loading="lazy">
+        <button type="button" class="img-rm-btn" data-idx="${idx}">×</button>
+      </div>`).join('');
+
+    list.querySelectorAll('.img-rm-btn').forEach(btn => {
+      btn.onclick = () => {
+        currentImages.splice(parseInt(btn.dataset.idx), 1);
+        renderPreviews();
+      };
+    });
+  }
+
+  document.getElementById('btn-select-images').addEventListener('click', () => {
+    document.getElementById('item-image-files').click();
+  });
+
+  document.getElementById('item-image-files').addEventListener('change', (e) => {
+    const files = Array.from(e.target.files || []);
+    let done = 0;
+    if (!files.length) return;
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        currentImages.push(ev.target.result);
+        done++;
+        if (done === files.length) { renderPreviews(); e.target.value = ''; }
+      };
+      reader.readAsDataURL(file);
+    });
+  });
+
+  async function loadForEdit(brand) {
+    const params = new URLSearchParams(location.search);
+    editingId = params.get('id');
+    if (!editingId) return; // Add mode — nothing to prefill
+
+    document.getElementById('pageTitle').textContent = 'Edit Item';
+    document.getElementById('submitBtn').textContent = 'Update Item';
+    document.getElementById('deleteBtn').style.display = 'inline-block';
+
+    const { data, error } = await db
+      .from('products')
+      .select('*')
+      .eq('id', editingId)
+      .eq('brand_id', brand.id)
+      .single();
+
+    if (error || !data) {
+      showToast('Product not found', 'error');
+      return;
+    }
+
+    document.getElementById('item-name').value          = data.name || '';
+    document.getElementById('item-sku').value           = data.sku || '';
+    document.getElementById('item-stock').value         = data.stock ?? 0;
+    document.getElementById('item-price').value         = data.price || '';
+    document.getElementById('item-wear-category').value = data.wear_category || 'official';
+    document.getElementById('item-type').value          = data.item_type || 'torso';
+    document.getElementById('item-condition').value     = data.condition || 'new';
+    document.getElementById('item-tags').value          = Array.isArray(data.tags) ? data.tags.join(', ') : '';
+
+    currentImages = (data.images || [])
+      .map(img => typeof img === 'string' ? img : (img?.url || ''))
+      .filter(Boolean);
+    renderPreviews();
+  }
+
+  document.getElementById('itemForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const brand = await getBrandUser();
+    if (!brand) return;
+
+    const name          = document.getElementById('item-name').value.trim();
+    const sku            = document.getElementById('item-sku').value.trim();
+    const stock          = parseInt(document.getElementById('item-stock').value) || 0;
+    const price          = parseFloat(document.getElementById('item-price').value) || 0;
+    const wear_category = document.getElementById('item-wear-category').value;
+    const item_type      = document.getElementById('item-type').value;
+    const condition      = document.getElementById('item-condition').value;
+    const tags = document.getElementById('item-tags').value
+      .split(',').map(t => t.trim()).filter(Boolean);
+
+    if (!name || !sku) { showToast('Name and SKU are required', 'error'); return; }
+
+    const payload = {
+      brand_id: brand.id,
+      name, sku, stock, price,
+      seller: brand.name,
+      wear_category, item_type, condition, tags,
+      images: currentImages.map(url => ({ url })),
+      updated_at: new Date().toISOString()
+    };
+
+    const submitBtn = document.getElementById('submitBtn');
+    const originalLabel = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = editingId ? 'Updating…' : 'Adding…';
+
+    let dbError;
+    if (editingId) {
+      const { error } = await db.from('products').update(payload).eq('id', editingId).eq('brand_id', brand.id);
+      dbError = error;
+    } else {
+      payload.created_at = new Date().toISOString();
+      const { error } = await db.from('products').insert(payload);
+      dbError = error;
+    }
+
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalLabel;
+
+    if (dbError) {
+      console.error('save item error:', dbError.message);
+      showToast('Failed to save item: ' + dbError.message, 'error');
+      return;
+    }
+
+    showToast(`Item ${editingId ? 'updated' : 'added'} successfully!`, 'success');
+    setTimeout(() => { window.location.href = 'brandflow.html?tab=inventory'; }, 700);
+  });
+
+  document.getElementById('deleteBtn').addEventListener('click', async () => {
+    if (!editingId) return;
+    if (!confirm('Delete this item? This also removes it from the marketplace.')) return;
+
+    const brand = await getBrandUser();
+    if (!brand) return;
+
+    const { error } = await db.from('products').delete().eq('id', editingId).eq('brand_id', brand.id);
+    if (error) {
+      console.error('delete item error:', error.message);
+      showToast('Failed to delete item', 'error');
+      return;
+    }
+
+    showToast('Item deleted', 'success');
+    setTimeout(() => { window.location.href = 'brandflow.html?tab=inventory'; }, 700);
+  });
+
+  // Page guard + boot
+  (async () => {
+    const brand = await getBrandUser();
+    if (!brand) {
+      document.getElementById('guardMsg').style.display = 'block';
+      setTimeout(() => { window.location.href = 'login.html?type=brand'; }, 900);
+      return;
+    }
+    document.getElementById('formPanel').style.display = 'block';
+    await loadForEdit(brand);
+  })();
+</script>
+
+</body>
+</html>
