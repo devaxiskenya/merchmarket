@@ -189,10 +189,32 @@
     });
   });
 
+  function coerceImagesFromDb(images) {
+    // Supports products.images stored as:
+    // 1) ['dataurl1', 'dataurl2']
+    // 2) [{ url: 'dataurl1' }, { url: 'dataurl2' }]
+    // 3) [{ url: null }, ...] (tolerate)
+    if (!Array.isArray(images)) return [];
+    return images
+      .map(img => {
+        if (typeof img === 'string') return img;
+        if (img && typeof img === 'object') return img.url || img.image || '';
+        return '';
+      })
+      .filter(Boolean);
+  }
+
+  function normalizeImagesForDb(images) {
+    // Store as {url} objects (current form behavior), but keep it tolerant
+    // with the loader that accepts string arrays too.
+    return (images || []).map(url => ({ url }));
+  }
+
   async function loadForEdit(brand) {
     const params = new URLSearchParams(location.search);
     editingId = params.get('id');
     if (!editingId) return; // Add mode — nothing to prefill
+
 
     document.getElementById('pageTitle').textContent = 'Edit Item';
     document.getElementById('submitBtn').textContent = 'Update Item';
@@ -219,11 +241,10 @@
     document.getElementById('item-condition').value     = data.condition || 'new';
     document.getElementById('item-tags').value          = Array.isArray(data.tags) ? data.tags.join(', ') : '';
 
-    currentImages = (data.images || [])
-      .map(img => typeof img === 'string' ? img : (img?.url || ''))
-      .filter(Boolean);
+    currentImages = coerceImagesFromDb(data.images);
     renderPreviews();
   }
+
 
   document.getElementById('itemForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -233,8 +254,12 @@
 
     const name          = document.getElementById('item-name').value.trim();
     const sku            = document.getElementById('item-sku').value.trim();
-    const stock          = parseInt(document.getElementById('item-stock').value) || 0;
-    const price          = parseFloat(document.getElementById('item-price').value) || 0;
+    const stockRaw      = document.getElementById('item-stock').value;
+    const priceRaw      = document.getElementById('item-price').value;
+
+    const stock = Number.parseInt(stockRaw, 10);
+    const price = Number.parseFloat(priceRaw);
+
     const wear_category = document.getElementById('item-wear-category').value;
     const item_type      = document.getElementById('item-type').value;
     const condition      = document.getElementById('item-condition').value;
@@ -242,43 +267,50 @@
       .split(',').map(t => t.trim()).filter(Boolean);
 
     if (!name || !sku) { showToast('Name and SKU are required', 'error'); return; }
+    if (!Number.isFinite(stock) || stock < 0) { showToast('Stock must be 0 or greater', 'error'); return; }
+    if (!Number.isFinite(price) || price < 0) { showToast('Price must be 0 or greater', 'error'); return; }
 
     const payload = {
       brand_id: brand.id,
       name, sku, stock, price,
       seller: brand.name,
       wear_category, item_type, condition, tags,
-      images: currentImages.map(url => ({ url })),
+      images: normalizeImagesForDb(currentImages),
       updated_at: new Date().toISOString()
     };
 
     const submitBtn = document.getElementById('submitBtn');
     const originalLabel = submitBtn.textContent;
+
     submitBtn.disabled = true;
     submitBtn.textContent = editingId ? 'Updating…' : 'Adding…';
 
-    let dbError;
-    if (editingId) {
-      const { error } = await db.from('products').update(payload).eq('id', editingId).eq('brand_id', brand.id);
-      dbError = error;
-    } else {
-      payload.created_at = new Date().toISOString();
-      const { error } = await db.from('products').insert(payload);
-      dbError = error;
+    try {
+      if (editingId) {
+        const { error } = await db
+          .from('products')
+          .update(payload)
+          .eq('id', editingId)
+          .eq('brand_id', brand.id);
+
+        if (error) throw error;
+      } else {
+        payload.created_at = new Date().toISOString();
+        const { error } = await db.from('products').insert(payload);
+        if (error) throw error;
+      }
+
+      showToast(`Item ${editingId ? 'updated' : 'added'} successfully!`, 'success');
+      setTimeout(() => { window.location.href = 'brandflow.html?tab=inventory'; }, 700);
+    } catch (err) {
+      console.error('save item error:', err?.message || err);
+      showToast('Failed to save item: ' + (err?.message || 'Unknown error'), 'error');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalLabel;
     }
-
-    submitBtn.disabled = false;
-    submitBtn.textContent = originalLabel;
-
-    if (dbError) {
-      console.error('save item error:', dbError.message);
-      showToast('Failed to save item: ' + dbError.message, 'error');
-      return;
-    }
-
-    showToast(`Item ${editingId ? 'updated' : 'added'} successfully!`, 'success');
-    setTimeout(() => { window.location.href = 'brandflow.html?tab=inventory'; }, 700);
   });
+
 
   document.getElementById('deleteBtn').addEventListener('click', async () => {
     if (!editingId) return;

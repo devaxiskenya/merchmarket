@@ -1,10 +1,5 @@
-# TODO
-
-## Merchmart — SKU-based tracking + order processing
-
-- [ ] cart.js: in checkout(), change order.item to SKU-based tracking list; ensure order.items lines carry sku/tracking.
-- [ ] wishlist.js: in placeWishlistOrders(), apply same SKU-based tracking logic.
-- [ ] brandflow-admin.js: update order table + order modal to show/use SKU/tracking instead of name.
-- [ ] Verify orders.html member order list shows SKU-based product column (via updated order.item).
-- [ ] Manual QA: place order via wishlist and via cart; confirm brand admin modal + orders list.
-
+- [x] Harden Add Item form: numeric validation + try/finally loading state
+- [x] Improve images payload compatibility (save/load) for products.images json shape
+- [x] Ensure submit button label restoration always happens on error
+- [ ] Keep edit/add/delete flows intact and redirect back to brand inventory
+- [ ] Quick manual test checklist (non-brand redirect, brand insert/update/delete)
