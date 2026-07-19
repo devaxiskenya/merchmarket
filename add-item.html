@@ -7,43 +7,130 @@
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="merchmarket.css">
   <style>
-    .item-form-page { max-width: 720px; margin: 0 auto; }
+    /* Add Item page UI (scoped styles) */
+    .item-form-page { max-width: 980px; margin: 0 auto; }
+
     .item-panel {
       background: rgba(255,255,255,.04);
-      border: 1px solid rgba(170,111,2,.3);
-      border-radius: 16px;
-      padding: 2rem 2.2rem;
+      border: 1px solid rgba(170,111,2,.35);
+      border-radius: 18px;
+      padding: 1.9rem 2.2rem;
     }
-    .form-actions {
-      display: flex;
-      gap: 1rem;
-      justify-content: flex-end;
-      margin-top: 1.6rem;
-      flex-wrap: wrap;
+
+    .admin-form-layout {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 1.5rem;
+      align-items: start;
     }
-    .form-actions .btn { min-width: 140px; }
+
+    .admin-form-section {
+      background: rgba(0,0,0,0.06);
+      border: 1px solid rgba(170,111,2,.22);
+      border-radius: 14px;
+      padding: 1.2rem 1.2rem;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.12);
+    }
+
+    .admin-form-section h2 {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: var(--accent-light);
+      margin-bottom: 1rem;
+      letter-spacing: -0.01em;
+    }
+
+    .admin-form-section .section-sub {
+      color: var(--text-secondary);
+      font-size: 0.82rem;
+      margin-top: -0.6rem;
+      margin-bottom: 1rem;
+      line-height: 1.5;
+    }
+
+    /* form grid tuning */
+    #itemForm { display:flex; flex-direction:column; gap: 1.1rem; }
+    .form-actions { display: flex; gap: 1rem; justify-content: flex-end; margin-top: 1.2rem; flex-wrap: wrap; }
+    .form-actions .btn { min-width: 150px; }
+
+    .form-group { margin-bottom: 0.1rem; }
+
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+
+    /* Image picker */
+    .image-drop {
+      border: 2px dashed rgba(170,111,2,.55);
+      border-radius: 14px;
+      padding: 1rem;
+      background: rgba(255,255,255,0.03);
+      transition: all .2s;
+    }
+
+    .image-drop:hover {
+      border-color: var(--accent);
+      background: rgba(196,125,46,.06);
+    }
+
     .image-picker-btn {
       width: 100%;
-      padding: .8rem 1.2rem;
-      border: 2px dashed rgba(170,111,2,.4);
+      padding: .85rem 1rem;
+      border: none;
       border-radius: 12px;
-      background: rgba(255,255,255,.03);
+      background: transparent;
       color: var(--accent-light);
-      font-weight: 600;
+      font-weight: 800;
       font-size: .95rem;
       cursor: pointer;
       transition: all .2s;
+      font-family: 'DM Sans', sans-serif;
     }
-    .image-picker-btn:hover { background: rgba(196,125,46,.1); border-color: var(--accent); }
-    #image-preview-list { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .9rem; }
-    .img-thumb { position: relative; width: 72px; height: 72px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(170,111,2,.3); flex-shrink: 0; }
+
+    .image-picker-btn:hover { transform: translateY(-1px); }
+
+    #image-preview-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .65rem;
+      margin-top: .9rem;
+    }
+
+    .img-thumb {
+      position: relative;
+      width: 92px;
+      height: 92px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid rgba(170,111,2,.35);
+      flex-shrink: 0;
+      background: rgba(255,255,255,0.03);
+    }
+
     .img-thumb img { width: 100%; height: 100%; object-fit: cover; }
+
     .img-rm-btn {
-      position: absolute; top: 2px; right: 2px; width: 20px; height: 20px;
-      border: none; border-radius: 50%; background: #f44336; color: #fff;
-      font-size: 12px; cursor: pointer; line-height: 1;
+      position: absolute;
+      top: 6px; right: 6px;
+      width: 24px; height: 24px;
+      border: none;
+      border-radius: 50%;
+      background: #f44336;
+      color: #fff;
+      font-size: 15px;
+      cursor: pointer;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 22px rgba(244,67,54,.25);
     }
-    .field-hint { color: #666; font-size: .8rem; margin-top: .4rem; }
+
+    .field-hint { color: var(--text-muted, #666); font-size: .82rem; margin-top: .55rem; line-height: 1.45; }
+
+    @media (max-width: 860px) {
+      .admin-form-layout { grid-template-columns: 1fr; }
+      .item-panel { padding: 1.5rem 1.2rem; }
+    }
   </style>
 </head>
 <body class="admin-body">
@@ -71,71 +158,97 @@
   <div class="item-panel" id="formPanel" style="display:none;">
     <form id="itemForm" style="display:flex;flex-direction:column;gap:1.4rem;">
 
-      <div class="form-group">
-        <label>Item Name *</label>
-        <input type="text" id="item-name" required placeholder="e.g. Custom Logo Hoodie">
-      </div>
+      <div class="admin-form-layout">
+        <section aria-label="Item details">
+          <div class="admin-form-section">
+            <h2>Item details</h2>
+            <div class="section-sub">Core product information shown on the marketplace.</div>
 
-      <div class="form-row">
-        <div class="form-group">
-          <label>SKU *</label>
-          <input type="text" id="item-sku" required placeholder="e.g. HOD-001">
-        </div>
-        <div class="form-group">
-          <label>Stock *</label>
-          <input type="number" id="item-stock" min="0" required value="0">
-        </div>
-      </div>
+            <div class="form-group">
+              <label>Item Name *</label>
+              <input type="text" id="item-name" required placeholder="e.g. Custom Logo Hoodie">
+            </div>
 
-      <div class="form-group">
-        <label>Price (KES) *</label>
-        <input type="number" id="item-price" min="0" step="0.01" required placeholder="e.g. 2500">
-      </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>SKU *</label>
+                <input type="text" id="item-sku" required placeholder="e.g. HOD-001">
+              </div>
+              <div class="form-group">
+                <label>Stock *</label>
+                <input type="number" id="item-stock" min="0" required value="0">
+              </div>
+            </div>
 
-      <div class="form-row">
-        <div class="form-group">
-          <label>Wear Category</label>
-          <select id="item-wear-category">
-            <option value="official">Official Wear</option>
-            <option value="street">Street Wear</option>
-            <option value="casual">Casual Wear</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Item Type</label>
-          <select id="item-type">
-            <option value="torso">Torso</option>
-            <option value="trunks">Trunks</option>
-            <option value="innies">Innies</option>
-            <option value="shoes">Shoes</option>
-            <option value="socks">Socks</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
-      </div>
+            <div class="form-group">
+              <label>Price (KES) *</label>
+              <input type="number" id="item-price" min="0" step="0.01" required placeholder="e.g. 2500">
+            </div>
 
-      <div class="form-group">
-        <label>Condition</label>
-        <select id="item-condition">
-          <option value="new">New</option>
-          <option value="like_new">Like New</option>
-          <option value="used">Used</option>
-          <option value="vintage">Vintage</option>
-        </select>
-      </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Wear Category</label>
+                <select id="item-wear-category">
+                  <option value="official">Official Wear</option>
+                  <option value="street">Street Wear</option>
+                  <option value="casual">Casual Wear</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Item Type</label>
+                <select id="item-type">
+                  <option value="torso">Torso</option>
+                  <option value="trunks">Trunks</option>
+                  <option value="innies">Innies</option>
+                  <option value="shoes">Shoes</option>
+                  <option value="socks">Socks</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            </div>
 
-      <div class="form-group">
-        <label>Tags (comma-separated)</label>
-        <input type="text" id="item-tags" placeholder="e.g. trendy, limited, summer">
-      </div>
+            <div class="form-group">
+              <label>Condition</label>
+              <select id="item-condition">
+                <option value="new">New</option>
+                <option value="like_new">Like New</option>
+                <option value="used">Used</option>
+                <option value="vintage">Vintage</option>
+              </select>
+            </div>
 
-      <div class="form-group">
-        <label>Images</label>
-        <input type="file" id="item-image-files" accept="image/*" multiple style="display:none">
-        <button type="button" id="btn-select-images" class="image-picker-btn">📁 Choose images from device</button>
-        <div id="image-preview-list"></div>
-        <div class="field-hint">Images are stored as base64 in Supabase. For production, use Supabase Storage instead.</div>
+            <div class="form-group">
+              <label>Tags (comma-separated)</label>
+              <input type="text" id="item-tags" placeholder="e.g. trendy, limited, summer">
+            </div>
+
+            <div class="form-group">
+              <label>Item Sizes</label>
+              <input
+                type="text"
+                id="item-sizes"
+                placeholder="e.g. XS, S, M, L or 32, 34, 36"
+              >
+              <div class="field-hint">Comma-separated. Saved to the product's Sizes field.</div>
+            </div>
+          </div>
+        </section>
+
+        <aside aria-label="Item media">
+          <div class="admin-form-section">
+            <h2>Images</h2>
+            <div class="section-sub">Add 1+ images. Preview thumbnails appear instantly.</div>
+
+            <div class="image-drop">
+              <input type="file" id="item-image-files" accept="image/*" multiple style="display:none">
+
+              <button type="button" id="btn-select-images" class="image-picker-btn">📁 Choose images from device</button>
+
+             
+            </div>
+          </div>
+        </aside>
       </div>
 
       <div class="form-actions">
@@ -240,6 +353,7 @@
     document.getElementById('item-type').value          = data.item_type || 'torso';
     document.getElementById('item-condition').value     = data.condition || 'new';
     document.getElementById('item-tags').value          = Array.isArray(data.tags) ? data.tags.join(', ') : '';
+    document.getElementById('item-sizes').value          = Array.isArray(data.sizes) ? data.sizes.join(', ') : '';
 
     currentImages = coerceImagesFromDb(data.images);
     renderPreviews();
@@ -266,6 +380,14 @@
     const tags = document.getElementById('item-tags').value
       .split(',').map(t => t.trim()).filter(Boolean);
 
+    // Placeholder item sizes: persist as an array (CSV) when provided.
+    // Until you add a real UI for sizes, we accept comma-separated values.
+    const sizes = (document.getElementById('item-sizes')?.value || '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+
+
     if (!name || !sku) { showToast('Name and SKU are required', 'error'); return; }
     if (!Number.isFinite(stock) || stock < 0) { showToast('Stock must be 0 or greater', 'error'); return; }
     if (!Number.isFinite(price) || price < 0) { showToast('Price must be 0 or greater', 'error'); return; }
@@ -274,8 +396,9 @@
       brand_id: brand.id,
       name, sku, stock, price,
       seller: brand.name,
-      wear_category, item_type, condition, tags,
+      wear_category, item_type, condition, tags, sizes,
       images: normalizeImagesForDb(currentImages),
+
       updated_at: new Date().toISOString()
     };
 

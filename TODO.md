@@ -3,3 +3,5 @@
 - [x] Ensure submit button label restoration always happens on error
 - [ ] Keep edit/add/delete flows intact and redirect back to brand inventory
 - [ ] Quick manual test checklist (non-brand redirect, brand insert/update/delete)
+- [ ] Rebuild Add Item page UI for better visibility (layout, sections, image picker, spacing)
+
