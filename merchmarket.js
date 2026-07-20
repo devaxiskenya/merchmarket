@@ -39,6 +39,53 @@ function loadLocal(key, fallback = []) {
   }
 }
 
+// Escapes user-controlled strings before they're interpolated into
+// innerHTML template literals. Product names, seller names, customer
+// names/emails, locations, etc. are all attacker-controllable (any
+// member or brand can set them), so every render path that builds HTML
+// via template strings must pass them through this first.
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str).replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+window.escapeHtml = escapeHtml;
+
+/* ─── SHARED NAV COMPONENT ───────────────────────────────────
+   Single source of truth for the member-facing nav (index, marketplace,
+   wishlist, orders, profile). Each of those pages has an empty
+   <div id="nav-root"></div> instead of hand-written <nav> markup — this
+   is what index.html was silently missing an Account link for. Adding
+   a link now means updating ONE place instead of five. Admin pages
+   (brandflow/add-item/view-order) keep their own tab-based nav since
+   it's structurally different and not part of this drift pattern. */
+
+function renderNav(currentPage) {
+  const root = document.getElementById('nav-root');
+  if (!root) return;
+
+  const cls = (page) => page === currentPage ? 'active' : '';
+
+  root.innerHTML = `
+    <nav class="nav">
+      <div class="logo" onclick="location.href='index.html'">MerchMarket</div>
+      <div class="nav-links">
+        <a href="index.html" class="${cls('index.html')}">Home</a>
+        <a href="marketplace.html" class="${cls('marketplace.html')}">Marketplace</a>
+        <a href="wishlist.html" class="${cls('wishlist.html')}" style="position:relative;">
+          ♡ Wishlist
+          <span class="wishlist-count" id="wishlist-count" style="display:none;position:absolute;top:-8px;right:-10px;background:#c47d2e;color:#000;border-radius:50%;min-width:18px;height:18px;font-size:.7rem;font-weight:700;padding:0 4px;align-items:center;justify-content:center;">0</span>
+        </a>
+        <a href="orders.html" class="${cls('orders.html')}">My Orders</a>
+        <a href="profile.html" class="${cls('profile.html')}" data-auth-link="member" style="display:none;">👤 Account</a>
+        <a href="login.html" class="btn btn-primary" style="font-size:.85rem;padding:.55rem 1.1rem;" data-auth-link="login">Log In</a>
+        <a href="#" class="btn btn-primary" style="font-size:.85rem;padding:.55rem 1.1rem;display:none;" data-auth-link="logout">Sign Out</a>
+      </div>
+    </nav>`;
+}
+window.renderNav = renderNav;
+
 function debounce(fn, delay) {
   let t;
   return function (...args) {
@@ -597,25 +644,29 @@ function renderProductGrid(products) {
     const addBtnText  = p.stock === 0 ? 'Out of Stock' : 'Add to Wishlist';
     const addBtnDisabled = p.stock === 0 ? 'disabled style="opacity:.6;cursor:not-allowed"' : '';
     const imageSrc    = p.images?.[0]?.url || '';
+    const safeName     = escapeHtml(p.name);
+    const safeSeller   = escapeHtml(p.seller);
+    const safeCondition = escapeHtml(p.condition);
+    const safeBadge     = escapeHtml(p.badge);
     const imageHtml   = imageSrc
-      ? `<img src="${imageSrc}" alt="${p.name}" style="width:100%;height:100%;object-fit:cover;border-radius:8px 8px 0 0;">`
+      ? `<img src="${imageSrc}" alt="${safeName}" style="width:100%;height:100%;object-fit:cover;border-radius:8px 8px 0 0;">`
       : `<div class="image-placeholder" style="width:100%;height:100%;background:linear-gradient(45deg,#ccc,#ddd);border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:center;color:#666;font-size:1.2rem;">No Image</div>`;
 
     return `
       <div class="product-card" data-id="${p.id}" data-stock="${p.stock}">
         <div class="product-image" style="background:${p.gradient};border-radius:12px 12px 0 0;overflow:hidden;">
           ${imageHtml}
-          ${p.badge && p.badge.toLowerCase() !== 'new' ? `<div class="product-badge">${p.badge}</div>` : ''}
+          ${p.badge && p.badge.toLowerCase() !== 'new' ? `<div class="product-badge">${safeBadge}</div>` : ''}
           ${stockBadge}
           <button class="wishlist-btn" onclick="toggleWishlist(this)">♡</button>
         </div>
         <div class="product-details">
           <div class="product-seller">
             <div class="seller-badge" style="background:${p.gradient}"></div>
-            <span class="seller-name">${p.seller}</span>
+            <span class="seller-name">${safeSeller}</span>
           </div>
-          <h3 class="product-title">${p.name}</h3>
-          ${p.condition ? `<div style="font-size:.75rem;color:#a0a0a0;margin-bottom:.3rem;text-transform:capitalize;">Condition: ${p.condition}</div>` : ''}
+          <h3 class="product-title">${safeName}</h3>
+          ${p.condition ? `<div style="font-size:.75rem;color:#a0a0a0;margin-bottom:.3rem;text-transform:capitalize;">Condition: ${safeCondition}</div>` : ''}
           <div class="product-footer">
             <div class="product-price">KES ${p.price.toFixed(0)}</div>
             <button class="add-to-cart-btn" onclick="addToCart(this)" ${addBtnDisabled}>${addBtnText}</button>
@@ -684,7 +735,7 @@ async function renderMemberOrders() {
 
     const productCell = items.length
       ? items.map(i => {
-          const name = i.products?.name || i.sku || '—';
+          const name = escapeHtml(i.products?.name || i.sku || '—');
           return `${name}<br><span style="opacity:.75;font-size:.85rem;">Qty: ${i.quantity || 1}</span>`;
         }).join('<div style="margin-top:.35rem;">')
       : '—';
@@ -701,7 +752,7 @@ async function renderMemberOrders() {
         <td style="font-family:monospace;color:#ffd8b5;">#${o.id}</td>
         <td>${productCell}</td>
         <td>${qtyCell}</td>
-        <td style="font-size:.85rem;color:#a0a0a0;">${o.location || 'Nairobi, Kenya'}</td>
+        <td style="font-size:.85rem;color:#a0a0a0;">${escapeHtml(o.location) || 'Nairobi, Kenya'}</td>
         <td style="font-size:.85rem;color:#a0a0a0;">${date}</td>
         <td><span class="status-badge ${statusClass}">${statusClass.charAt(0).toUpperCase() + statusClass.slice(1)}</span></td>
         <td><strong>KES ${total.toLocaleString()}</strong></td>
@@ -761,24 +812,18 @@ async function initNavAuth() {
   }
 }
 
-/* ─── SHARED BRAND HELPER ──────────────────────────────────── */
-// Returns the current brand's full profile, or null (with a toast) if not
-// a brand. Shared by brandflow-admin.js, add-item.html, and view-order.html
-// so all three pages guard the same way.
-async function getBrandUser() {
-  const user = await getCurrentUser();
-  if (!user || user.type !== 'brand') {
-    showToast('Brand account required', 'error');
-    return null;
-  }
-  return user;
-}
-
 /* ─── BOOT ─────────────────────────────────────────────────── */
 
 document.addEventListener('DOMContentLoaded', async () => {
   const page = window.location.pathname.split('/').pop() || 'index.html';
   const isAuthPage = page.includes('login') || page.includes('signup');
+
+  // Inject the shared nav on member-facing pages (any page with a
+  // #nav-root placeholder). Must happen before initNavAuth(), since
+  // that queries elements this renders.
+  if (document.getElementById('nav-root')) {
+    renderNav(page);
+  }
 
   // Run nav auth + cart badge in parallel — not sequentially
   if (!isAuthPage) {
@@ -794,3 +839,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Auth pages (login.html, signup.html) bind their own submit handlers
   // via the AuthLogin / AuthSignup controllers defined in those files.
 });
+/* ─── SHARED BRAND HELPER ──────────────────────────────────── */
+// Returns the current brand's full profile, or null (with a toast) if not
+// a brand. Shared by brandflow-admin.js, add-item.html, and view-order.html
+// so all three pages guard the same way.
+async function getBrandUser() {
+  const user = await getCurrentUser();
+  if (!user || user.type !== 'brand') {
+    showToast('Brand account required', 'error');
+    return null;
+  }
+  return user;
+}
