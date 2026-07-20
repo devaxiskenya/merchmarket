@@ -264,21 +264,34 @@
 <script src="merchmarket.js"></script>
 
 <script>
+  // currentImages holds { url, path } — path is the Storage object path,
+  // only present for images uploaded through this flow (used so removal
+  // can also clean up Storage, not just the local array). Legacy items
+  // saved before this migration may still have raw base64 strings in
+  // `images` — coerceImagesFromDb() normalizes those to { url } with no
+  // path, which still renders fine, just isn't Storage-backed yet.
   let currentImages = [];
   let editingId = null;
+  let currentBrand = null;
 
   function renderPreviews() {
     const list = document.getElementById('image-preview-list');
-    list.innerHTML = currentImages.map((src, idx) => `
+    list.innerHTML = currentImages.map((img, idx) => `
       <div class="img-thumb">
-        <img src="${src}" loading="lazy">
+        <img src="${img.url}" loading="lazy">
         <button type="button" class="img-rm-btn" data-idx="${idx}">×</button>
       </div>`).join('');
 
     list.querySelectorAll('.img-rm-btn').forEach(btn => {
-      btn.onclick = () => {
-        currentImages.splice(parseInt(btn.dataset.idx), 1);
+      btn.onclick = async () => {
+        const idx = parseInt(btn.dataset.idx);
+        const [removed] = currentImages.splice(idx, 1);
         renderPreviews();
+        // Best-effort cleanup — only meaningful for Storage-backed images.
+        if (removed?.path) {
+          const { error } = await db.storage.from('product-images').remove([removed.path]);
+          if (error) console.error('Storage cleanup failed for', removed.path, error.message);
+        }
       };
     });
   }
@@ -287,40 +300,67 @@
     document.getElementById('item-image-files').click();
   });
 
-  document.getElementById('item-image-files').addEventListener('change', (e) => {
+  document.getElementById('item-image-files').addEventListener('change', async (e) => {
     const files = Array.from(e.target.files || []);
-    let done = 0;
     if (!files.length) return;
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = ev => {
-        currentImages.push(ev.target.result);
-        done++;
-        if (done === files.length) { renderPreviews(); e.target.value = ''; }
-      };
-      reader.readAsDataURL(file);
-    });
+
+    if (!currentBrand) currentBrand = await getBrandUser();
+    if (!currentBrand) { e.target.value = ''; return; }
+
+    const selectBtn = document.getElementById('btn-select-images');
+    const originalLabel = selectBtn.textContent;
+    selectBtn.disabled = true;
+
+    for (const file of files) {
+      if (file.size > 5 * 1024 * 1024) {
+        showToast(`${file.name} is over 5MB — skipped.`, 'error');
+        continue;
+      }
+
+      selectBtn.textContent = `Uploading ${file.name}…`;
+
+      const ext  = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const path = `${currentBrand.id}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
+      const { error: uploadError } = await db.storage
+        .from('product-images')
+        .upload(path, file, { cacheControl: '3600', upsert: false });
+
+      if (uploadError) {
+        console.error('image upload error:', uploadError.message);
+        showToast(`Failed to upload ${file.name}: ${uploadError.message}`, 'error');
+        continue;
+      }
+
+      const { data: pub } = db.storage.from('product-images').getPublicUrl(path);
+      currentImages.push({ url: pub.publicUrl, path });
+      renderPreviews();
+    }
+
+    selectBtn.disabled = false;
+    selectBtn.textContent = originalLabel;
+    e.target.value = '';
   });
 
   function coerceImagesFromDb(images) {
     // Supports products.images stored as:
-    // 1) ['dataurl1', 'dataurl2']
-    // 2) [{ url: 'dataurl1' }, { url: 'dataurl2' }]
-    // 3) [{ url: null }, ...] (tolerate)
+    // 1) ['dataurl1', 'dataurl2']                        (oldest, base64)
+    // 2) [{ url: 'dataurl1' }, ...]                       (base64, wrapped)
+    // 3) [{ url: 'https://...supabase.co/storage/...', path: '...' }]  (current)
     if (!Array.isArray(images)) return [];
     return images
       .map(img => {
-        if (typeof img === 'string') return img;
-        if (img && typeof img === 'object') return img.url || img.image || '';
-        return '';
+        if (typeof img === 'string') return { url: img };
+        if (img && typeof img === 'object' && (img.url || img.image)) {
+          return { url: img.url || img.image, path: img.path || null };
+        }
+        return null;
       })
       .filter(Boolean);
   }
 
   function normalizeImagesForDb(images) {
-    // Store as {url} objects (current form behavior), but keep it tolerant
-    // with the loader that accepts string arrays too.
-    return (images || []).map(url => ({ url }));
+    return (images || []).map(img => ({ url: img.url, path: img.path || null }));
   }
 
   async function loadForEdit(brand) {
@@ -461,6 +501,7 @@
       setTimeout(() => { window.location.href = 'login.html?type=brand'; }, 900);
       return;
     }
+    currentBrand = brand;
     document.getElementById('formPanel').style.display = 'block';
     await loadForEdit(brand);
   })();
