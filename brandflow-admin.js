@@ -169,7 +169,7 @@ function renderOrdersTable(orders) {
     const cust  = order.profiles || {};
     const items = order.order_items || [];
     const itemLabel = items.length
-      ? items.map(i => escapeHtml(i.products?.name || i.sku || '—')).join(', ')
+      ? items.map(i => i.products?.name || i.sku || '—').join(', ')
       : '—';
     const date  = order.created_at ? new Date(order.created_at).toLocaleDateString('en-KE') : '—';
     const total = parseFloat(order.total_amount) || 0;
@@ -178,10 +178,10 @@ function renderOrdersTable(orders) {
     return `
       <tr>
         <td><strong style="color:#ffd8b5;font-family:monospace;">#${order.id}</strong></td>
-        <td>${escapeHtml(cust.name) || '—'}<br><small style="color:#a0a0a0;">${escapeHtml(cust.email) || '—'}</small></td>
+        <td>${cust.name || '—'}<br><small style="color:#a0a0a0;">${cust.email || '—'}</small></td>
         <td>${itemLabel}</td>
         <td>${date}<br><small style="color:#a0a0a0;">Updated: ${date}</small></td>
-        <td>${escapeHtml(order.location) || 'Nairobi, Kenya'}</td>
+        <td>${order.location || 'Nairobi, Kenya'}</td>
         <td>KES ${total.toLocaleString()}</td>
         <td><span class="status ${st}">${st.toUpperCase()}</span></td>
         <td>
@@ -247,8 +247,8 @@ async function loadInventoryTab() {
     const imgCount = Array.isArray(p.images) ? p.images.length : 0;
     return `
       <tr>
-        <td>${escapeHtml(p.name)}</td>
-        <td style="font-family:monospace;color:#a0a0a0;">${escapeHtml(p.sku) || '—'}</td>
+        <td>${p.name}</td>
+        <td style="font-family:monospace;color:#a0a0a0;">${p.sku || '—'}</td>
         <td>${p.stock ?? '—'}</td>
         <td>KES ${parseFloat(p.price || 0).toLocaleString()}</td>
         <td>${imgCount} image${imgCount !== 1 ? 's' : ''}</td>
@@ -415,8 +415,8 @@ async function loadCustomersTab() {
 
   tbody.innerHTML = customers.map(c => `
     <tr>
-      <td>${escapeHtml(c.name)}</td>
-      <td>${escapeHtml(c.email)}</td>
+      <td>${c.name}</td>
+      <td>${c.email}</td>
       <td>${c.orders}</td>
       <td>KES ${c.total.toLocaleString()}</td>
       <td><button class="action-btn">View</button></td>
@@ -431,37 +431,20 @@ async function resetDatabase() {
   const brand = await getBrandUser();
   if (!brand) return;
 
-  const failures = [];
-
-  // Delete in FK-safe order: order_items -> orders, wishlists -> products.
-  // (RLS: order_items_brand_delete / orders_brand_delete / wishlists_brand_delete
-  // let the brand delete these even though they're not the row owner.)
-  const { error: orderItemsErr } = await db
-    .from('order_items')
-    .delete()
-    .in('order_id',
-      (await db.from('orders').select('id').eq('brand_id', brand.id)).data?.map(o => o.id) || []
-    );
-  if (orderItemsErr) failures.push(`order items: ${orderItemsErr.message}`);
-
-  const { error: ordersErr } = await db.from('orders').delete().eq('brand_id', brand.id);
-  if (ordersErr) failures.push(`orders: ${ordersErr.message}`);
-
-  const productIds = (await db.from('products').select('id').eq('brand_id', brand.id)).data?.map(p => p.id) || [];
+  // Delete in dependency order
+  const productIds = await db
+    .from('products')
+    .select('id')
+    .eq('brand_id', brand.id)
+    .then(r => (r.data || []).map(p => p.id));
 
   if (productIds.length) {
-    const { error: wishlistErr } = await db.from('wishlists').delete().in('product_id', productIds);
-    if (wishlistErr) failures.push(`wishlist entries: ${wishlistErr.message}`);
-
-    const { error: productsErr } = await db.from('products').delete().eq('brand_id', brand.id);
-    if (productsErr) failures.push(`products: ${productsErr.message}`);
+    await db.from('order_items').delete().in('product_id', productIds);
+    await db.from('wishlists').delete().in('product_id', productIds);
+    await db.from('products').delete().eq('brand_id', brand.id);
   }
 
-  if (failures.length) {
-    console.error('resetDatabase partial failure:', failures);
-    showToast('Reset incomplete — ' + failures.join('; '), 'error');
-    return;
-  }
+  await db.from('orders').delete().eq('brand_id', brand.id);
 
   showToast('All brand data reset.', 'success');
   setTimeout(() => tabSwitch('orders'), 1200);

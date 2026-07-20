@@ -66,7 +66,7 @@
   const params  = new URLSearchParams(location.search);
   const orderId = params.get('id');
 
-  function esc(s) { return (s == null || s === '') ? '—' : escapeHtml(s); }
+  function esc(s) { return (s ?? '—'); }
 
   async function loadOrder() {
     const panel = document.getElementById('orderPanel');
@@ -116,7 +116,7 @@
       </div>
       <div class="order-block">
         <h4>📍 Shipping</h4>
-        <p><strong>Location:</strong> ${esc(order.location) !== '—' ? esc(order.location) : 'Nairobi, Kenya'}</p>
+        <p><strong>Location:</strong> ${order.location || 'Nairobi, Kenya'}</p>
         <p><strong>Date:</strong> ${date}</p>
       </div>
       <div class="order-block order-total-row">

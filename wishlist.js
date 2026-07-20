@@ -107,7 +107,7 @@
       <div class="wishlist-item" data-wishlist-row="${rowId}">
         <div class="item-thumb">${thumb}</div>
         <div>
-          <div class="item-name">${escapeHtml(item.name)}</div>
+          <div class="item-name">${item.name}</div>
           <div class="item-sub">Qty: ${item.quantity}</div>
         </div>
         <div class="item-right">${moneyKES(item.price * item.quantity)}</div>
@@ -152,7 +152,7 @@
         const blockId = `vendor-${String(brandId ?? seller).replace(/[^a-zA-Z0-9_-]/g, '')}`;
 
         const preview = payment
-          ? `<div class="pay-notice" style="margin-top:.25rem;">${escapeHtml(method) || 'Payment method'}${details?.phone ? ' • ' + escapeHtml(details.phone) : ''}</div>`
+          ? `<div class="pay-notice" style="margin-top:.25rem;">${method || 'Payment method'}${details?.phone ? ' • ' + details.phone : ''}</div>`
           : `<div class="pay-notice" style="margin-top:.25rem;">Not provided yet</div>`;
 
         const itemsHtml = items
@@ -163,7 +163,7 @@
           <div class="vendor-block">
             <div class="vendor-header">
               <div>
-                <div class="vendor-name">${escapeHtml(seller)}</div>
+                <div class="vendor-name">${seller}</div>
                 <div class="vendor-meta">${items.length} item type${items.length !== 1 ? 's' : ''} • ${moneyKES(subtotal)}</div>
               </div>
               <button class="action-btn" style="margin-left:auto;"
@@ -213,17 +213,17 @@
     const d      = profile.details || {};
     const rows   = [];
 
-    if (d.phone)                rows.push(`<div class="pay-row"><span>Phone</span><span class="pay-val">${escapeHtml(d.phone)}</span></div>`);
-    if (d.bankName)             rows.push(`<div class="pay-row"><span>Bank</span><span class="pay-val">${escapeHtml(d.bankName)}</span></div>`);
-    if (d.accountName)          rows.push(`<div class="pay-row"><span>Account name</span><span class="pay-val">${escapeHtml(d.accountName)}</span></div>`);
-    if (d.accountNumber)        rows.push(`<div class="pay-row"><span>Account number</span><span class="pay-val">${escapeHtml(d.accountNumber)}</span></div>`);
-    if (d.email)                rows.push(`<div class="pay-row"><span>Email</span><span class="pay-val">${escapeHtml(d.email)}</span></div>`);
-    if (d.mpesaShortcode)       rows.push(`<div class="pay-row"><span>Paybill/Shortcode</span><span class="pay-val">${escapeHtml(d.mpesaShortcode)}</span></div>`);
-    if (d.deliveryInstructions) rows.push(`<div class="pay-row"><span>Instructions</span><span class="pay-val">${escapeHtml(d.deliveryInstructions)}</span></div>`);
+    if (d.phone)                rows.push(`<div class="pay-row"><span>Phone</span><span class="pay-val">${d.phone}</span></div>`);
+    if (d.bankName)             rows.push(`<div class="pay-row"><span>Bank</span><span class="pay-val">${d.bankName}</span></div>`);
+    if (d.accountName)          rows.push(`<div class="pay-row"><span>Account name</span><span class="pay-val">${d.accountName}</span></div>`);
+    if (d.accountNumber)        rows.push(`<div class="pay-row"><span>Account number</span><span class="pay-val">${d.accountNumber}</span></div>`);
+    if (d.email)                rows.push(`<div class="pay-row"><span>Email</span><span class="pay-val">${d.email}</span></div>`);
+    if (d.mpesaShortcode)       rows.push(`<div class="pay-row"><span>Paybill/Shortcode</span><span class="pay-val">${d.mpesaShortcode}</span></div>`);
+    if (d.deliveryInstructions) rows.push(`<div class="pay-row"><span>Instructions</span><span class="pay-val">${d.deliveryInstructions}</span></div>`);
 
     panel.innerHTML = `
       <div class="pay-method">
-        <h3>${escapeHtml(method)}</h3>
+        <h3>${method}</h3>
         ${rows.length ? rows.join('') : '<div class="pay-notice">No method details stored.</div>'}
         <div class="pay-notice" style="margin-top:.7rem;">Updated: ${profile.updated_at ? new Date(profile.updated_at).toLocaleDateString('en-KE') : '—'}</div>
       </div>
