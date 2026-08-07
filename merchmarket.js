@@ -50,7 +50,40 @@ function escapeHtml(str) {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[ch]));
 }
+
+function escapeAttribute(str) {
+  return escapeHtml(str);
+}
+
+function sanitizeImageUrl(url) {
+  if (typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+  if (/^(https?:)?\/\//i.test(trimmed) || /^data:image\//i.test(trimmed) || trimmed.startsWith('blob:')) return trimmed;
+  return '';
+}
+
+function setCookie(name, value, maxAgeSeconds = 86400) {
+  const secureFlag = window.location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAgeSeconds}; SameSite=Lax${secureFlag}`;
+}
+
+function clearCookie(name) {
+  const secureFlag = window.location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `${name}=; path=/; max-age=0; SameSite=Lax${secureFlag}`;
+}
+
+function syncBrandSessionCookie(user) {
+  if (user?.type === 'brand') {
+    setCookie('mm_brand_session', `brand:${user.id}`, 60 * 60 * 24);
+  } else {
+    clearCookie('mm_brand_session');
+  }
+}
+
 window.escapeHtml = escapeHtml;
+window.escapeAttribute = escapeAttribute;
+window.sanitizeImageUrl = sanitizeImageUrl;
 
 /* ─── SHARED NAV COMPONENT ───────────────────────────────────
    Single source of truth for the member-facing nav (index, marketplace,
@@ -111,7 +144,8 @@ function showToast(msg, type = 'default') {
     document.body.appendChild(toast);
   }
   const icons = { success: '✅', error: '⚠️', info: 'ℹ️', default: '📢' };
-  toast.innerHTML = `<span>${icons[type] || icons.default}</span><span>${msg}</span>`;
+  const safeMsg = escapeHtml(msg);
+  toast.innerHTML = `<span>${icons[type] || icons.default}</span><span>${safeMsg}</span>`;
   toast.style.transform = 'translateY(0)';
   clearTimeout(toast._t);
   toast._t = setTimeout(() => { toast.style.transform = 'translateY(120%)'; }, 4000);
@@ -284,6 +318,8 @@ async function login(email, password) {
     console.warn('localStorage sync failed:', e);
   }
 
+  syncBrandSessionCookie(profile);
+
   // Cache is already set by fetchProfile above — redirect immediately
   window.location.href = profile.type === 'brand' ? '/brandflow.html' : '/marketplace.html';
   return { ...data.user, ...profile };
@@ -291,6 +327,7 @@ async function login(email, password) {
 
 async function logout() {
   clearProfileCache();
+  syncBrandSessionCookie(null);
   await db.auth.signOut();
   window.location.href = 'login.html';
 }
@@ -325,11 +362,13 @@ db.auth.onAuthStateChange(async (event, session) => {
       console.warn('localStorage sync failed:', e);
     }
 
+    syncBrandSessionCookie(profile);
     window.dispatchEvent(new CustomEvent('userReady', { detail: profile }));
   }
 
   if (event === 'SIGNED_OUT') {
     clearProfileCache();
+    syncBrandSessionCookie(null);
     try {
       localStorage.removeItem('currentUserId');
       localStorage.removeItem('currentUserProfile');

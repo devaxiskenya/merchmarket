@@ -39,24 +39,30 @@ function renderCart() {
   /* Items list */
   const list = document.getElementById('cart-items-list');
   if (list) {
-    list.innerHTML = cart.map((item, idx) => `
-      <div class="cart-item" data-idx="${idx}">
-        <div class="item-thumb" style="background:${item.gradient || 'linear-gradient(135deg,#667eea,#764ba2)'}">
-          ${item.image ? `<img src="${item.image}" style="width:100%;height:100%;object-fit:cover;">` : ''}
+    list.innerHTML = cart.map((item, idx) => {
+      const safeName = typeof window.escapeHtml === 'function' ? window.escapeHtml(item.name || 'Item') : String(item.name || 'Item');
+      const safeSeller = typeof window.escapeHtml === 'function' ? window.escapeHtml(item.seller || 'MerchMarket') : String(item.seller || 'MerchMarket');
+      const safeImage = typeof window.sanitizeImageUrl === 'function' ? window.sanitizeImageUrl(item.image) : item.image;
+      const safeImageHtml = safeImage ? `<img src="${typeof window.escapeHtml === 'function' ? window.escapeHtml(safeImage) : safeImage}" style="width:100%;height:100%;object-fit:cover;">` : '';
+      return `
+        <div class="cart-item" data-idx="${idx}">
+          <div class="item-thumb" style="background:${typeof window.escapeHtml === 'function' ? window.escapeHtml(item.gradient || 'linear-gradient(135deg,#667eea,#764ba2)') : (item.gradient || 'linear-gradient(135deg,#667eea,#764ba2)')}">
+            ${safeImageHtml}
+          </div>
+          <div class="item-info">
+            <div class="item-name">${safeName}</div>
+            <div class="item-seller">${safeSeller}</div>
+          </div>
+          <div class="item-qty">
+            <button class="qty-btn" onclick="changeQty(${idx}, -1)">−</button>
+            <span class="qty-val">${item.quantity}</span>
+            <button class="qty-btn" onclick="changeQty(${idx}, 1)">+</button>
+          </div>
+          <div class="item-price">KES ${(item.price * item.quantity).toFixed(0)}</div>
+          <button class="remove-btn" onclick="removeItem(${idx})" title="Remove">✕</button>
         </div>
-        <div class="item-info">
-          <div class="item-name">${item.name}</div>
-          <div class="item-seller">${item.seller || 'MerchMarket'}</div>
-        </div>
-        <div class="item-qty">
-          <button class="qty-btn" onclick="changeQty(${idx}, -1)">−</button>
-          <span class="qty-val">${item.quantity}</span>
-          <button class="qty-btn" onclick="changeQty(${idx}, 1)">+</button>
-        </div>
-        <div class="item-price">KES ${(item.price * item.quantity).toFixed(0)}</div>
-        <button class="remove-btn" onclick="removeItem(${idx})" title="Remove">✕</button>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   }
 
   updateTotals();
@@ -199,7 +205,8 @@ function showCartToast(msg, type = 'default') {
     document.body.appendChild(toast);
   }
   const icons = { success:'✅', error:'⚠️', info:'ℹ️', default:'📢' };
-  toast.innerHTML = `<span>${icons[type]||'📢'}</span><span>${msg}</span>`;
+  const safeMsg = typeof window.escapeHtml === 'function' ? window.escapeHtml(msg) : String(msg);
+  toast.innerHTML = `<span>${icons[type]||'📢'}</span><span>${safeMsg}</span>`;
   toast.style.transform = 'translateY(0)';
   clearTimeout(toast._t);
   toast._t = setTimeout(() => { toast.style.transform = 'translateY(120%)'; }, 3500);

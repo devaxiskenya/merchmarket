@@ -66,7 +66,10 @@
   const params  = new URLSearchParams(location.search);
   const orderId = params.get('id');
 
-  function esc(s) { return (s ?? '—'); }
+  function esc(s) {
+    if (typeof window.escapeHtml === 'function') return window.escapeHtml(s ?? '—');
+    return String(s ?? '—');
+  }
 
   async function loadOrder() {
     const panel = document.getElementById('orderPanel');

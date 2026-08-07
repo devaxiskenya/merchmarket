@@ -12,6 +12,14 @@
 
 /* ─── TAB ROUTER ──────────────────────────────────────────── */
 
+function escapeValue(value) {
+  if (typeof window.escapeHtml === 'function') return window.escapeHtml(value);
+  if (value == null) return '';
+  return String(value).replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
 function tabSwitch(tabName) {
   document.querySelectorAll('.nav-tab').forEach(tab => {
     tab.classList.toggle('active', tab.dataset.tab === tabName);
@@ -169,26 +177,29 @@ function renderOrdersTable(orders) {
     const cust  = order.profiles || {};
     const items = order.order_items || [];
     const itemLabel = items.length
-      ? items.map(i => i.products?.name || i.sku || '—').join(', ')
+      ? items.map(i => escapeValue(i.products?.name || i.sku || '—')).join(', ')
       : '—';
     const date  = order.created_at ? new Date(order.created_at).toLocaleDateString('en-KE') : '—';
     const total = parseFloat(order.total_amount) || 0;
-    const st    = order.status || 'pending';
+    const st    = String(order.status || 'pending');
+    const safeName = escapeValue(cust.name || '—');
+    const safeEmail = escapeValue(cust.email || '—');
+    const safeLocation = escapeValue(order.location || 'Nairobi, Kenya');
 
     return `
       <tr>
-        <td><strong style="color:#ffd8b5;font-family:monospace;">#${order.id}</strong></td>
-        <td>${cust.name || '—'}<br><small style="color:#a0a0a0;">${cust.email || '—'}</small></td>
+        <td><strong style="color:#ffd8b5;font-family:monospace;">#${escapeValue(order.id)}</strong></td>
+        <td>${safeName}<br><small style="color:#a0a0a0;">${safeEmail}</small></td>
         <td>${itemLabel}</td>
         <td>${date}<br><small style="color:#a0a0a0;">Updated: ${date}</small></td>
-        <td>${order.location || 'Nairobi, Kenya'}</td>
+        <td>${safeLocation}</td>
         <td>KES ${total.toLocaleString()}</td>
         <td><span class="status ${st}">${st.toUpperCase()}</span></td>
         <td>
-          <a class="action-btn" href="view-order.html?id=${order.id}" style="text-decoration:none;">View</a>
-          ${st === 'pending' ? `<button class="action-btn" style="background:#4caf50;color:#fff;" onclick="updateOrderStatus('${order.id}','confirmed')">Confirm</button>` : ''}
-          ${st === 'confirmed' ? `<button class="action-btn" style="background:#2196f3;color:#fff;" onclick="updateOrderStatus('${order.id}','active')">Ship</button>` : ''}
-          ${(st === 'active' || st === 'confirmed') ? `<button class="action-btn" style="background:#ff9800;color:#fff;" onclick="updateOrderStatus('${order.id}','completed')">Complete</button>` : ''}
+          <a class="action-btn" href="view-order.html?id=${escapeValue(order.id)}" style="text-decoration:none;">View</a>
+          ${st === 'pending' ? `<button class="action-btn" style="background:#4caf50;color:#fff;" onclick="updateOrderStatus('${escapeValue(order.id)}','confirmed')">Confirm</button>` : ''}
+          ${st === 'confirmed' ? `<button class="action-btn" style="background:#2196f3;color:#fff;" onclick="updateOrderStatus('${escapeValue(order.id)}','active')">Ship</button>` : ''}
+          ${(st === 'active' || st === 'confirmed') ? `<button class="action-btn" style="background:#ff9800;color:#fff;" onclick="updateOrderStatus('${escapeValue(order.id)}','completed')">Complete</button>` : ''}
         </td>
       </tr>`;
   }).join('');
@@ -245,16 +256,19 @@ async function loadInventoryTab() {
 
   tbody.innerHTML = products.map(p => {
     const imgCount = Array.isArray(p.images) ? p.images.length : 0;
+    const name = escapeValue(p.name || 'Untitled');
+    const sku = escapeValue(p.sku || '—');
+    const stock = escapeValue(p.stock ?? '—');
     return `
       <tr>
-        <td>${p.name}</td>
-        <td style="font-family:monospace;color:#a0a0a0;">${p.sku || '—'}</td>
-        <td>${p.stock ?? '—'}</td>
+        <td>${name}</td>
+        <td style="font-family:monospace;color:#a0a0a0;">${sku}</td>
+        <td>${stock}</td>
         <td>KES ${parseFloat(p.price || 0).toLocaleString()}</td>
         <td>${imgCount} image${imgCount !== 1 ? 's' : ''}</td>
         <td>
-          <a class="action-btn" href="add-item.html?id=${p.id}" style="text-decoration:none;">Edit</a>
-          <button class="action-btn" style="background:#f44336;color:#fff;" onclick="deleteInventoryItem('${p.id}')">Delete</button>
+          <a class="action-btn" href="add-item.html?id=${escapeValue(p.id)}" style="text-decoration:none;">Edit</a>
+          <button class="action-btn" style="background:#f44336;color:#fff;" onclick="deleteInventoryItem('${escapeValue(p.id)}')">Delete</button>
         </td>
       </tr>`;
   }).join('');
@@ -415,9 +429,9 @@ async function loadCustomersTab() {
 
   tbody.innerHTML = customers.map(c => `
     <tr>
-      <td>${c.name}</td>
-      <td>${c.email}</td>
-      <td>${c.orders}</td>
+      <td>${escapeValue(c.name || '—')}</td>
+      <td>${escapeValue(c.email || '—')}</td>
+      <td>${escapeValue(c.orders)}</td>
       <td>KES ${c.total.toLocaleString()}</td>
       <td><button class="action-btn">View</button></td>
     </tr>`).join('');

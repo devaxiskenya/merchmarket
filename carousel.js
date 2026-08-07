@@ -34,7 +34,10 @@
       let slidesHtml = '';
       let dotsHtml = '';
       images.forEach((src, idx) => {
-        slidesHtml += `<img src="${src}" class="carousel-img${idx === 0 ? ' active' : ''}" data-index="${idx}" alt="">`;
+        const safeSrc = typeof window.sanitizeImageUrl === 'function' ? window.sanitizeImageUrl(src) : src;
+        if (safeSrc) {
+          slidesHtml += `<img src="${safeSrc}" class="carousel-img${idx === 0 ? ' active' : ''}" data-index="${idx}" alt="">`;
+        }
         dotsHtml += `<span class="carousel-dot${idx === 0 ? ' active' : ''}" data-index="${idx}"></span>`;
       });
 

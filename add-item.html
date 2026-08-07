@@ -276,11 +276,17 @@
 
   function renderPreviews() {
     const list = document.getElementById('image-preview-list');
-    list.innerHTML = currentImages.map((img, idx) => `
-      <div class="img-thumb">
-        <img src="${img.url}" loading="lazy">
-        <button type="button" class="img-rm-btn" data-idx="${idx}">×</button>
-      </div>`).join('');
+    const safeImages = currentImages.map((img, idx) => {
+      const safeUrl = typeof window.sanitizeImageUrl === 'function' ? window.sanitizeImageUrl(img.url) : img.url;
+      const safeSrc = safeUrl ? escapeHtml(safeUrl) : '';
+      return `
+        <div class="img-thumb">
+          <img src="${safeSrc}" loading="lazy">
+          <button type="button" class="img-rm-btn" data-idx="${idx}">×</button>
+        </div>`;
+    }).join('');
+
+    list.innerHTML = safeImages;
 
     list.querySelectorAll('.img-rm-btn').forEach(btn => {
       btn.onclick = async () => {
@@ -311,7 +317,15 @@
     const originalLabel = selectBtn.textContent;
     selectBtn.disabled = true;
 
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    const isAllowedType = file => allowedTypes.includes(file.type) || /\.(jpe?g|png|webp|gif)$/i.test(file.name);
+
     for (const file of files) {
+      if (!isAllowedType(file)) {
+        showToast('Only JPG, PNG, WebP, or GIF images are allowed.', 'error');
+        continue;
+      }
+
       if (file.size > 5 * 1024 * 1024) {
         showToast(`${file.name} is over 5MB — skipped.`, 'error');
         continue;
