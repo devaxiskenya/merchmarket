@@ -187,6 +187,18 @@ function showAuthError(msg) { showToast(msg, 'error'); }
 // Eliminates repeated round-trips: profile is fetched at most once per page load.
 let _profileCache = null;
 let _profileFetchPromise = null; // deduplicate concurrent fetches
+let _currentAccessToken = null;
+
+async function getCurrentAccessToken() {
+  if (_currentAccessToken) return _currentAccessToken;
+
+  const { data: { session } } = await db.auth.getSession();
+  const accessToken = session?.access_token || null;
+  if (accessToken) {
+    _currentAccessToken = accessToken;
+  }
+  return accessToken;
+}
 
 async function fetchProfile(userId) {
   // Return cache hit immediately
@@ -195,17 +207,36 @@ async function fetchProfile(userId) {
   // Deduplicate: if a fetch is already in-flight, wait for it instead of launching another
   if (_profileFetchPromise) return _profileFetchPromise;
 
-  _profileFetchPromise = db
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .single()
-    .then(({ data, error }) => {
-      _profileFetchPromise = null;
-      if (error) { console.error('fetchProfile error:', error.message); return null; }
+  _profileFetchPromise = (async () => {
+    const accessToken = await getCurrentAccessToken();
+    const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+    const res = await fetch('/api/member/profile', { headers });
+    const payload = await res.json().catch(() => ({}));
+
+    if (res.ok) {
+      const data = payload.profile || null;
       _profileCache = data;
       return data;
-    });
+    }
+
+    console.warn('fetchProfile server fallback:', payload.error || res.statusText);
+
+    const { data, error } = await db
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('fetchProfile error:', error.message);
+      return null;
+    }
+
+    _profileCache = data;
+    return data;
+  })().finally(() => {
+    _profileFetchPromise = null;
+  });
 
   return _profileFetchPromise;
 }
@@ -247,23 +278,56 @@ async function createAccount(type, name, email, password) {
     return { pending: true, name, type, email };
   }
 
-  // Upsert profile row — safe whether or not the DB trigger already created it.
-  const { error: profileError } = await db.from('profiles').upsert({
-    id:         user.id,
-    name,
-    type,
-    email,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  }, { onConflict: 'id' });
+  // Persist the profile through the server so we do not depend on direct browser writes.
+  const accessToken = await getCurrentAccessToken();
+  const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : await getAuthHeader();
+  const res = await fetch('/api/member/profile', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({
+      name,
+      email,
+      type,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    })
+  });
 
-  if (profileError) {
-    // Non-fatal: auth account was created. Log and continue.
-    console.error('Profile upsert error:', profileError.message);
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}));
+    console.error('Profile upsert error:', payload.error || res.statusText);
   }
 
   showToast(`Welcome, ${name}! Account created.`, 'success');
   return { ...user, name, type };
+}
+
+function getPreferredProfileType(defaultType = 'member') {
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    const paramType = (params.get('type') || '').toLowerCase();
+    if (paramType === 'brand' || paramType === 'member') return paramType;
+  } catch (e) {
+    console.warn('Could not read login type from URL:', e);
+  }
+
+  const path = (window.location.pathname || '').toLowerCase();
+  if (path.includes('brand')) return 'brand';
+  return defaultType;
+}
+
+function buildRecoveryProfilePayload(user, session) {
+  const meta = user?.user_metadata || {};
+  const name = meta.name || meta.full_name || user?.email?.split('@')[0] || 'User';
+  const type = (meta.type || getPreferredProfileType('member')).toLowerCase();
+
+  return {
+    name,
+    type,
+    email: user?.email || session?.user?.email || '',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
 }
 
 async function login(email, password) {
@@ -286,25 +350,38 @@ async function login(email, password) {
     throw new Error(msg);
   }
 
+  _currentAccessToken = data.session?.access_token || null;
+
   const profile = await fetchProfile(data.user.id);
   if (!profile) {
-    // Profile row missing — attempt to recover it from auth metadata
-    const meta = data.user.user_metadata || {};
-    if (meta.type && meta.name) {
-      await db.from('profiles').upsert({
-        id:         data.user.id,
-        name:       meta.name,
-        type:       meta.type,
-        email:      data.user.email,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
+    // Profile row missing — recover it using auth metadata or the current login context.
+    const recoveryPayload = buildRecoveryProfilePayload(data.user, data.session);
+    const accessToken = data.session?.access_token || (await getCurrentAccessToken());
+    const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : await getAuthHeader();
+
+    if (recoveryPayload.name && recoveryPayload.type) {
+      const recoveryRes = await fetch('/api/member/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify(recoveryPayload)
+      });
+
+      if (!recoveryRes.ok) {
+        const payload = await recoveryRes.json().catch(() => ({}));
+        console.warn('Profile recovery via server failed, falling back to direct Supabase write:', payload.error || recoveryRes.statusText);
+        await db.from('profiles').upsert({
+          id: data.user.id,
+          ...recoveryPayload
+        }, { onConflict: 'id' });
+      }
+
       const recovered = await fetchProfile(data.user.id);
       if (recovered) {
         window.location.href = recovered.type === 'brand' ? '/brandflow.html' : '/marketplace.html';
         return { ...data.user, ...recovered };
       }
     }
+
     const msg = 'Account found but profile is missing. Contact support.';
     showAuthError(msg);
     throw new Error(msg);
@@ -346,11 +423,18 @@ async function getCurrentUser() {
   return profile ? { ...session.user, ...profile } : null;
 }
 
+async function getAuthHeader() {
+  const accessToken = await getCurrentAccessToken();
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+}
+
 // Fires on every auth state transition (sign-in, sign-out, token refresh).
 // On SIGNED_IN: fetchProfile uses the cache so no extra round-trip occurs
 //   when arriving here right after login() already fetched the profile.
 // On SIGNED_OUT: clear cache so the next getCurrentUser() call goes to the DB.
 db.auth.onAuthStateChange(async (event, session) => {
+  _currentAccessToken = session?.access_token || null;
+
   if (event === 'SIGNED_IN' && session) {
     // fetchProfile is cache-aware — this is a no-op if login() already ran
     const profile = await fetchProfile(session.user.id);
@@ -391,13 +475,16 @@ async function getWishlist() {
     return loadLocal('mm_wishlist_guest', []);
   }
 
-  const { data, error } = await db
-    .from('wishlists')
-    .select('*, products(*)')
-    .eq('user_id', user.id);
+  const headers = await getAuthHeader();
+  const res = await fetch('/api/member/wishlist', { headers });
+  const payload = await res.json().catch(() => ({}));
 
-  if (error) { console.error('getWishlist error:', error.message); return []; }
-  return data;
+  if (!res.ok) {
+    console.error('getWishlist error:', payload.error || res.statusText);
+    return [];
+  }
+
+  return payload.wishlist || [];
 }
 
 // Single canonical badge updater used by all pages and wishlist.js.
@@ -407,11 +494,11 @@ async function updateWishlistBadge() {
   let count = 0;
 
   if (user) {
-    const { data } = await db
-      .from('wishlists')
-      .select('quantity')
-      .eq('user_id', user.id);
-    count = (data || []).reduce((s, i) => s + (i.quantity || 1), 0);
+    const headers = await getAuthHeader();
+    const res = await fetch('/api/member/wishlist', { headers });
+    const payload = await res.json().catch(() => ({}));
+    const items = payload.wishlist || [];
+    count = items.reduce((s, i) => s + (i.quantity || 1), 0);
   } else {
     const local = loadLocal('mm_wishlist_guest', []);
     count = local.reduce((s, i) => s + (i.quantity || 1), 0);
@@ -456,18 +543,18 @@ async function addToCart(btn) {
     return;
   }
 
-  // Authenticated: upsert into Supabase
-  const { data: existing } = await db
-    .from('wishlists')
-    .select('id, quantity')
-    .eq('user_id', user.id)
-    .eq('product_id', id)
-    .maybeSingle();
+  const headers = await getAuthHeader();
+  const res = await fetch('/api/member/wishlist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ product_id: id, quantity: 1 })
+  });
+  const payload = await res.json().catch(() => ({}));
 
-  if (existing) {
-    await db.from('wishlists').update({ quantity: existing.quantity + 1 }).eq('id', existing.id);
-  } else {
-    await db.from('wishlists').insert({ user_id: user.id, product_id: id, quantity: 1 });
+  if (!res.ok) {
+    console.error('addToCart wishlist error:', payload.error || res.statusText);
+    showToast('Could not save wishlist item.', 'error');
+    return;
   }
 
   showToast(`${title} added to wishlist!`, 'success');
@@ -493,17 +580,18 @@ async function addToCartById(productId) {
     return;
   }
 
-  const { data: existing } = await db
-    .from('wishlists')
-    .select('id, quantity')
-    .eq('user_id', user.id)
-    .eq('product_id', productId)
-    .maybeSingle();
+  const headers = await getAuthHeader();
+  const res = await fetch('/api/member/wishlist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ product_id: productId, quantity: 1 })
+  });
+  const payload = await res.json().catch(() => ({}));
 
-  if (existing) {
-    await db.from('wishlists').update({ quantity: existing.quantity + 1 }).eq('id', existing.id);
-  } else {
-    await db.from('wishlists').insert({ user_id: user.id, product_id: productId, quantity: 1 });
+  if (!res.ok) {
+    console.error('addToCartById wishlist error:', payload.error || res.statusText);
+    showToast('Could not save wishlist item.', 'error');
+    return;
   }
 
   showToast(`${product.name} added to wishlist!`, 'success');
@@ -756,14 +844,13 @@ async function renderMemberOrders() {
   const user = await getCurrentUser();
   if (!user) return;
 
-  const { data: orders, error } = await db
-    .from('orders')
-    .select('*, order_items(*, products(name, sku))')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false });
+  const headers = await getAuthHeader();
+  const res = await fetch('/api/member/orders', { headers });
+  const payload = await res.json().catch(() => ({}));
 
-  if (error) { console.error('renderMemberOrders error:', error.message); return; }
-  if (!orders || orders.length === 0) return;
+  if (!res.ok) { console.error('renderMemberOrders error:', payload.error || res.statusText); return; }
+  const orders = payload.orders || [];
+  if (!orders.length) return;
 
   // Remove any static fallback rows
   document.querySelectorAll('.static-fallback').forEach(r => r.remove());

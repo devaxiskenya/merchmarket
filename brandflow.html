@@ -190,12 +190,20 @@
 <script>
   // Brand Admin access guard — runs after brandflow-admin.js is loaded
   (async () => {
+    const navEl = document.querySelector('.admin-navbar');
+    const mainEl = document.querySelector('.admin-main');
+    if (navEl) navEl.style.display = 'none';
+    if (mainEl) mainEl.style.display = 'none';
+
     try {
       const user = await getCurrentUser();
       if (!user || user.type !== 'brand') {
-        window.location.href = 'login.html?type=brand';
+        window.location.replace('login.html?type=brand');
         return;
       }
+
+      if (navEl) navEl.style.display = '';
+      if (mainEl) mainEl.style.display = '';
 
       // Show logged-in indicator
       const iconEl = document.getElementById('brand-user-icon');
@@ -209,7 +217,7 @@
       }
     } catch (e) {
       console.error('Brand guard error:', e);
-      window.location.href = 'login.html?type=brand';
+      window.location.replace('login.html?type=brand');
     }
   })();
 </script>

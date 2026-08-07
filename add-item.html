@@ -463,18 +463,23 @@
     submitBtn.textContent = editingId ? 'Updating…' : 'Adding…';
 
     try {
+      const headers = await getAuthHeader();
       if (editingId) {
-        const { error } = await db
-          .from('products')
-          .update(payload)
-          .eq('id', editingId)
-          .eq('brand_id', brand.id);
-
-        if (error) throw error;
+        const res = await fetch(`/api/brand/products/${editingId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...headers },
+          body: JSON.stringify(payload)
+        });
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(result.error || 'Failed to update product');
       } else {
-        payload.created_at = new Date().toISOString();
-        const { error } = await db.from('products').insert(payload);
-        if (error) throw error;
+        const res = await fetch('/api/brand/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...headers },
+          body: JSON.stringify(payload)
+        });
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(result.error || 'Failed to add product');
       }
 
       showToast(`Item ${editingId ? 'updated' : 'added'} successfully!`, 'success');
@@ -496,9 +501,13 @@
     const brand = await getBrandUser();
     if (!brand) return;
 
-    const { error } = await db.from('products').delete().eq('id', editingId).eq('brand_id', brand.id);
-    if (error) {
-      console.error('delete item error:', error.message);
+    const res = await fetch(`/api/brand/products/${editingId}`, {
+      method: 'DELETE',
+      headers: await getAuthHeader()
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.error('delete item error:', payload.error || res.statusText);
       showToast('Failed to delete item', 'error');
       return;
     }

@@ -36,24 +36,17 @@
       return loadLocal('mm_wishlist_guest', []);
     }
 
-    const { data, error } = await db
-      .from('wishlists')
-      .select(`
-        id,
-        quantity,
-        products (
-          id, name, price, seller, images, sku
-        )
-      `)
-      .eq('user_id', user.id);
+    const headers = await getAuthHeader();
+    const res = await fetch('/api/member/wishlist', { headers });
+    const payload = await res.json().catch(() => ({}));
 
-    if (error) {
-      console.error('loadWishlist error:', error.message);
+    if (!res.ok) {
+      console.error('loadWishlist error:', payload.error || res.statusText);
       return [];
     }
 
     // Flatten into a shape the renderer can use
-    return (data || []).map(row => ({
+    return (payload.wishlist || []).map(row => ({
       _wishlistRowId: row.id,
       id: row.products?.id,
       name: row.products?.name || 'Unknown',
@@ -248,15 +241,15 @@
       return;
     }
 
-    // Authenticated: delete the wishlist row by its Supabase id
-    const { error } = await db
-      .from('wishlists')
-      .delete()
-      .eq('id', rowId)
-      .eq('user_id', user.id); // RLS safety check
+    const headers = await getAuthHeader();
+    const res = await fetch(`/api/member/wishlist/${encodeURIComponent(rowId)}`, {
+      method: 'DELETE',
+      headers
+    });
+    const payload = await res.json().catch(() => ({}));
 
-    if (error) {
-      console.error('removeWishlistItem error:', error.message);
+    if (!res.ok) {
+      console.error('removeWishlistItem error:', payload.error || res.statusText);
       if (typeof showToast === 'function') showToast('Could not remove item. Try again.', 'error');
       return;
     }
@@ -296,38 +289,29 @@
       if (!brandId) continue;
 
       const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+      const orderPayload = {
+        brand_id: brandId,
+        total_amount: total.toFixed(2),
+        location: deliveryLocation,
+        items: items.map(i => ({
+          product_id: i.id,
+          quantity: i.quantity,
+          sku: i.sku || '',
+          unit_price: i.price
+        }))
+      };
 
-      // Insert the parent order row
-      const { data: orderData, error: orderError } = await db
-        .from('orders')
-        .insert({
-          user_id:    user.id,
-          brand_id:   brandId,
-          total_amount: total.toFixed(2),
-          status:     'pending',
-          location:   deliveryLocation,
-          created_at: new Date().toISOString()
-        })
-        .select('id')
-        .single();
+      const headers = await getAuthHeader();
+      const res = await fetch('/api/member/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ orders: [orderPayload] })
+      });
+      const payload = await res.json().catch(() => ({}));
 
-      if (orderError) {
-        console.error(`Order insert error for seller ${seller}:`, orderError.message);
+      if (!res.ok) {
+        console.error(`Order insert error for seller ${seller}:`, payload.error || res.statusText);
         continue;
-      }
-
-      // Insert order_items rows
-      const orderItems = items.map(i => ({
-        order_id:   orderData.id,
-        product_id: i.id,
-        quantity:   i.quantity,
-        sku:        i.sku || '',
-        unit_price: i.price
-      }));
-
-      const { error: itemsError } = await db.from('order_items').insert(orderItems);
-      if (itemsError) {
-        console.error(`order_items insert error for order ${orderData.id}:`, itemsError.message);
       }
 
       ordersCreated++;
@@ -339,12 +323,16 @@
     }
 
     // Clear wishlist after placing orders
-    const { error: clearError } = await db
-      .from('wishlists')
-      .delete()
-      .eq('user_id', user.id);
+    const headers = await getAuthHeader();
+    const clearRes = await fetch('/api/member/wishlist/clear', {
+      method: 'POST',
+      headers
+    });
+    const clearPayload = await clearRes.json().catch(() => ({}));
 
-    if (clearError) console.error('Clear wishlist error:', clearError.message);
+    if (!clearRes.ok) {
+      console.error('Clear wishlist error:', clearPayload.error || clearRes.statusText);
+    }
 
     render();
 

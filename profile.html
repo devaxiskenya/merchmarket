@@ -266,14 +266,17 @@
         renderAvatar(_pendingAvatarDataUrl, _currentProfile?.name);
 
         // Save immediately — avatar changes shouldn't wait on the rest of the form
-        const { error } = await db
-          .from('profiles')
-          .update({ avatar_url: _pendingAvatarDataUrl, updated_at: new Date().toISOString() })
-          .eq('id', _currentProfile.id);
+        const headers = await getAuthHeader();
+        const res = await fetch('/api/member/profile', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...headers },
+          body: JSON.stringify({ avatar_url: _pendingAvatarDataUrl, updated_at: new Date().toISOString() })
+        });
+        const payload = await res.json().catch(() => ({}));
 
-        if (error) {
-          showToast('Failed to update photo: ' + error.message, 'error');
-          console.error('avatar update error:', error.message);
+        if (!res.ok) {
+          showToast('Failed to update photo: ' + (payload.error || res.statusText), 'error');
+          console.error('avatar update error:', payload.error || res.statusText);
         } else {
           showToast('Profile photo updated!', 'success');
           clearProfileCache();
@@ -297,17 +300,20 @@
       const originalLabel = btn.textContent;
       btn.textContent = 'Saving…';
 
-      const { error } = await db
-        .from('profiles')
-        .update({ name, phone, address, updated_at: new Date().toISOString() })
-        .eq('id', _currentProfile.id);
+      const headers = await getAuthHeader();
+      const res = await fetch('/api/member/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ name, phone, address, updated_at: new Date().toISOString() })
+      });
+      const payload = await res.json().catch(() => ({}));
 
       btn.disabled = false;
       btn.textContent = originalLabel;
 
-      if (error) {
-        showToast('Failed to save: ' + error.message, 'error');
-        console.error('profile update error:', error.message);
+      if (!res.ok) {
+        showToast('Failed to save: ' + (payload.error || res.statusText), 'error');
+        console.error('profile update error:', payload.error || res.statusText);
         return;
       }
 

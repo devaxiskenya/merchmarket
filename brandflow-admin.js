@@ -101,25 +101,17 @@ async function loadOrdersTab() {
 
   const filter = document.getElementById('orders-search')?.value?.toLowerCase() || '';
 
-  // Fetch orders for this brand with joined order_items + products + customer profile
-  const { data: orders, error } = await db
-    .from('orders')
-    .select(`
-      id, total_amount, status, location, created_at,
-      profiles!orders_user_id_fkey (id, name, email),
-      order_items (
-        id, quantity, sku, unit_price,
-        products (name, sku)
-      )
-    `)
-    .eq('brand_id', brand.id)
-    .order('created_at', { ascending: false });
+  const headers = await getAuthHeader();
+  const res = await fetch('/api/brand/orders', { headers });
+  const payload = await res.json().catch(() => ({}));
 
-  if (error) {
-    console.error('loadOrdersTab error:', error.message);
+  if (!res.ok) {
+    console.error('loadOrdersTab error:', payload.error || res.statusText);
     showToast('Failed to load orders', 'error');
     return;
   }
+
+  const orders = payload.orders || [];
 
   // Client-side filter
   let filtered = orders || [];
@@ -208,14 +200,17 @@ function renderOrdersTable(orders) {
 /* ─── ORDER STATUS UPDATE ─────────────────────────────────── */
 
 async function updateOrderStatus(orderId, newStatus) {
-  const { error } = await db
-    .from('orders')
-    .update({ status: newStatus })
-    .eq('id', orderId);
+  const headers = await getAuthHeader();
+  const res = await fetch(`/api/brand/orders/${orderId}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
+    body: JSON.stringify({ status: newStatus })
+  });
+  const payload = await res.json().catch(() => ({}));
 
-  if (error) {
+  if (!res.ok) {
     showToast('Failed to update order status', 'error');
-    console.error('updateOrderStatus error:', error.message);
+    console.error('updateOrderStatus error:', payload.error || res.statusText);
     return;
   }
 
@@ -234,17 +229,17 @@ async function loadInventoryTab() {
   const brand = await getBrandUser();
   if (!brand) return;
 
-  const { data: products, error } = await db
-    .from('products')
-    .select('*')
-    .eq('brand_id', brand.id)
-    .order('created_at', { ascending: false });
+  const headers = await getAuthHeader();
+  const res = await fetch('/api/brand/inventory', { headers });
+  const payload = await res.json().catch(() => ({}));
 
-  if (error) {
-    console.error('loadInventoryTab error:', error.message);
+  if (!res.ok) {
+    console.error('loadInventoryTab error:', payload.error || res.statusText);
     showToast('Failed to load inventory', 'error');
     return;
   }
+
+  const products = payload.products || [];
 
   const tbody = document.getElementById('inventory-table-body');
   if (!tbody) return;
@@ -283,15 +278,15 @@ async function deleteInventoryItem(productId) {
   const brand = await getBrandUser();
   if (!brand) return;
 
-  const { error } = await db
-    .from('products')
-    .delete()
-    .eq('id', productId)
-    .eq('brand_id', brand.id);
+  const res = await fetch(`/api/brand/products/${productId}`, {
+    method: 'DELETE',
+    headers: await getAuthHeader()
+  });
+  const payload = await res.json().catch(() => ({}));
 
-  if (error) {
+  if (!res.ok) {
     showToast('Failed to delete item', 'error');
-    console.error('deleteInventoryItem error:', error.message);
+    console.error('deleteInventoryItem error:', payload.error || res.statusText);
     return;
   }
 
@@ -305,13 +300,11 @@ async function loadPaymentsTab() {
   const brand = await getBrandUser();
   if (!brand) return;
 
-  const { data, error } = await db
-    .from('vendor_payments')
-    .select('*')
-    .eq('brand_id', brand.id)
-    .maybeSingle();
+  const res = await fetch('/api/brand/payments', { headers: await getAuthHeader() });
+  const payload = await res.json().catch(() => ({}));
 
-  if (error) { console.error('loadPaymentsTab error:', error.message); return; }
+  if (!res.ok) { console.error('loadPaymentsTab error:', payload.error || res.statusText); return; }
+  const data = payload.payments;
   if (!data) return; // no saved payment details yet
 
   const d = data.details || {};
@@ -347,19 +340,16 @@ async function savePaymentDetails() {
   // Remove empty keys
   Object.keys(details).forEach(k => { if (!details[k]) delete details[k]; });
 
-  const { error } = await db
-    .from('vendor_payments')
-    .upsert({
-      brand_id:   brand.id,
-      method,
-      label,
-      details,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'brand_id' });
+  const res = await fetch('/api/brand/payments', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
+    body: JSON.stringify({ method, label, details })
+  });
+  const payload = await res.json().catch(() => ({}));
 
-  if (error) {
-    showToast('Failed to save payment details: ' + error.message, 'error');
-    console.error('savePaymentDetails error:', error.message);
+  if (!res.ok) {
+    showToast('Failed to save payment details: ' + (payload.error || res.statusText), 'error');
+    console.error('savePaymentDetails error:', payload.error || res.statusText);
     return;
   }
 
@@ -400,13 +390,16 @@ async function loadCustomersTab() {
   const brand = await getBrandUser();
   if (!brand) return;
 
-  // Aggregate customer spend from orders for this brand
-  const { data: orders, error } = await db
-    .from('orders')
-    .select('total_amount, profiles!orders_user_id_fkey(id, name, email)')
-    .eq('brand_id', brand.id);
+  const headers = await getAuthHeader();
+  const res = await fetch('/api/brand/orders', { headers });
+  const payload = await res.json().catch(() => ({}));
 
-  if (error) { console.error('loadCustomersTab error:', error.message); return; }
+  if (!res.ok) {
+    console.error('loadCustomersTab error:', payload.error || res.statusText);
+    return;
+  }
+
+  const orders = payload.orders || [];
 
   // Aggregate by customer
   const map = {};
@@ -445,20 +438,17 @@ async function resetDatabase() {
   const brand = await getBrandUser();
   if (!brand) return;
 
-  // Delete in dependency order
-  const productIds = await db
-    .from('products')
-    .select('id')
-    .eq('brand_id', brand.id)
-    .then(r => (r.data || []).map(p => p.id));
+  const res = await fetch('/api/brand/reset', {
+    method: 'POST',
+    headers: await getAuthHeader()
+  });
+  const payload = await res.json().catch(() => ({}));
 
-  if (productIds.length) {
-    await db.from('order_items').delete().in('product_id', productIds);
-    await db.from('wishlists').delete().in('product_id', productIds);
-    await db.from('products').delete().eq('brand_id', brand.id);
+  if (!res.ok) {
+    showToast('Failed to reset brand data', 'error');
+    console.error('resetDatabase error:', payload.error || res.statusText);
+    return;
   }
-
-  await db.from('orders').delete().eq('brand_id', brand.id);
 
   showToast('All brand data reset.', 'success');
   setTimeout(() => tabSwitch('orders'), 1200);

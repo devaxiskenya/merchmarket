@@ -80,17 +80,12 @@
       return;
     }
 
-    const { data: order, error } = await db
-      .from('orders')
-      .select(`
-        id, total_amount, status, location, created_at,
-        profiles!orders_user_id_fkey (name, email),
-        order_items ( quantity, sku, unit_price, products (name) )
-      `)
-      .eq('id', orderId)
-      .single();
+    const headers = await getAuthHeader();
+    const res = await fetch(`/api/brand/orders/${orderId}`, { headers });
+    const payload = await res.json().catch(() => ({}));
+    const order = payload.order;
 
-    if (error || !order) {
+    if (!res.ok || !order) {
       panel.innerHTML = '<p style="color:#a0a0a0;">Order not found.</p>';
       return;
     }
@@ -135,9 +130,14 @@
   }
 
   async function updateStatus(newStatus) {
-    const { error } = await db.from('orders').update({ status: newStatus }).eq('id', orderId);
-    if (error) {
-      console.error('updateOrderStatus error:', error.message);
+    const res = await fetch(`/api/brand/orders/${orderId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
+      body: JSON.stringify({ status: newStatus })
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.error('updateOrderStatus error:', payload.error || res.statusText);
       showToast('Failed to update order status', 'error');
       return;
     }
