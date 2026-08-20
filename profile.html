@@ -71,6 +71,54 @@
     .member-name { font-family:'Syne',sans-serif; font-size:1.2rem; font-weight:700; color:#ffd8b5; margin-top:1rem; }
     .member-since { color:#a0a0a0; font-size:.82rem; margin-top:.3rem; }
 
+    /* ── Points + badges ── */
+    .points-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      margin-top: .9rem;
+      padding: .45rem 1rem;
+      border-radius: 100px;
+      background: rgba(196,125,46,.14);
+      border: 1px solid rgba(196,125,46,.35);
+      color: #ffd8b5;
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: .95rem;
+    }
+    .points-pill .points-icon { font-size: 1.05rem; }
+
+    .badges-section { margin-top: 1.4rem; text-align: left; }
+    .badges-section h4 {
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--text-secondary);
+      margin-bottom: .6rem;
+      font-weight: 700;
+    }
+    .badges-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+    }
+    .badge-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      padding: .35rem .7rem;
+      border-radius: 100px;
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(170,111,2,.3);
+      color: #d9d9d9;
+      font-size: .78rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge-chip .badge-icon { font-size: .95rem; }
+    .badges-empty { color: #666; font-size: .8rem; line-height: 1.5; }
+    .next-milestone { margin-top: .7rem; color: #666; font-size: .78rem; line-height: 1.5; }
+
     .quick-links { margin-top: 1.6rem; display: flex; flex-direction: column; gap: .6rem; }
     .quick-link {
       display: flex; align-items: center; gap: .6rem;
@@ -104,7 +152,18 @@
 </head>
 <body class="body">
 
-  <div id="nav-root"></div>
+  <nav>
+    <div class="logo" onclick="location.href='index.html'">MerchMarket</div>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="marketplace.html">Marketplace</a>
+      <a href="wishlist.html">♡ Wishlist</a>
+      <a href="orders.html">My Orders</a>
+      <a href="profile.html" class="active">👤 Account</a>
+      <a href="login.html" class="btn btn-primary" style="font-size:.85rem;padding:.55rem 1.1rem;" data-auth-link="login">Log In</a>
+      <a href="#" class="btn btn-primary" style="font-size:.85rem;padding:.55rem 1.1rem;display:none;" data-auth-link="logout">Sign Out</a>
+    </div>
+  </nav>
 
   <div class="account-page">
     <div class="account-title">My Account</div>
@@ -125,6 +184,20 @@
 
         <div class="member-name" id="memberNameDisplay">—</div>
         <div class="member-since" id="memberSince">—</div>
+
+        <div class="points-pill">
+          <span class="points-icon">🏅</span>
+          <span id="pointsValue">0</span>
+          <span style="font-weight:500;opacity:.75;">points</span>
+        </div>
+
+        <div class="badges-section">
+          <h4>Badges Earned</h4>
+          <div class="badges-strip" id="badgesStrip">
+            <span class="badges-empty">Loading…</span>
+          </div>
+          <div class="next-milestone" id="nextMilestone"></div>
+        </div>
 
         <div class="quick-links">
           <a href="orders.html" class="quick-link">📦 Order History</a>
@@ -200,12 +273,10 @@
 
     function renderAvatar(url, name) {
       const wrap = document.getElementById('avatarWrap');
-      const safeName = escapeHtml(initials(name));
-      const safeUrl = typeof window.sanitizeImageUrl === 'function' ? window.sanitizeImageUrl(url) : url;
-      if (safeUrl) {
-        wrap.innerHTML = `<img src="${escapeHtml(safeUrl)}" alt="Avatar">`;
+      if (url) {
+        wrap.innerHTML = `<img src="${url}" alt="Avatar">`;
       } else {
-        wrap.innerHTML = `<span class="avatar-initial">${safeName}</span>`;
+        wrap.innerHTML = `<span class="avatar-initial">${initials(name)}</span>`;
       }
     }
 
@@ -234,6 +305,54 @@
         : '';
 
       renderAvatar(user.avatar_url, user.name);
+
+      document.getElementById('pointsValue').textContent = (user.points ?? 0).toLocaleString();
+      await loadBadges(user.id, user.completed_purchases ?? 0);
+    }
+
+    async function loadBadges(userId, completedPurchases) {
+      const stripEl = document.getElementById('badgesStrip');
+      const nextEl  = document.getElementById('nextMilestone');
+
+      // Earned badges (joined via member_badges)
+      const { data: earned, error: earnedError } = await db
+        .from('member_badges')
+        .select('awarded_at, badges(threshold, name, icon)')
+        .eq('user_id', userId);
+
+      if (earnedError) {
+        console.error('loadBadges earned error:', earnedError.message);
+        stripEl.innerHTML = '<span class="badges-empty">Couldn\'t load badges.</span>';
+        return;
+      }
+
+      const badges = (earned || [])
+        .map(row => row.badges)
+        .filter(Boolean)
+        .sort((a, b) => a.threshold - b.threshold);
+
+      stripEl.innerHTML = badges.length
+        ? badges.map(b => `
+            <span class="badge-chip" title="${b.threshold} purchases">
+              <span class="badge-icon">${b.icon}</span>${b.name}
+            </span>`).join('')
+        : '<span class="badges-empty">No badges yet — complete your first purchase to start earning them!</span>';
+
+      // Next milestone hint — smallest badge threshold not yet reached
+      const { data: nextBadge } = await db
+        .from('badges')
+        .select('threshold, name')
+        .gt('threshold', completedPurchases)
+        .order('threshold', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (nextBadge) {
+        const remaining = nextBadge.threshold - completedPurchases;
+        nextEl.textContent = `${remaining} more purchase${remaining !== 1 ? 's' : ''} to unlock "${nextBadge.name}"`;
+      } else {
+        nextEl.textContent = '';
+      }
     }
 
     // ── Avatar upload ──
@@ -244,15 +363,6 @@
     document.getElementById('avatarFile').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
-
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-      const isAllowedType = allowedTypes.includes(file.type) || /\.(jpe?g|png|webp|gif)$/i.test(file.name);
-
-      if (!isAllowedType) {
-        showToast('Only JPG, PNG, WebP, or GIF images are allowed.', 'error');
-        e.target.value = '';
-        return;
-      }
 
       if (file.size > 2 * 1024 * 1024) {
         showToast('Image too large — please use one under 2MB.', 'error');
@@ -266,17 +376,14 @@
         renderAvatar(_pendingAvatarDataUrl, _currentProfile?.name);
 
         // Save immediately — avatar changes shouldn't wait on the rest of the form
-        const headers = await getAuthHeader();
-        const res = await fetch('/api/member/profile', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', ...headers },
-          body: JSON.stringify({ avatar_url: _pendingAvatarDataUrl, updated_at: new Date().toISOString() })
-        });
-        const payload = await res.json().catch(() => ({}));
+        const { error } = await db
+          .from('profiles')
+          .update({ avatar_url: _pendingAvatarDataUrl, updated_at: new Date().toISOString() })
+          .eq('id', _currentProfile.id);
 
-        if (!res.ok) {
-          showToast('Failed to update photo: ' + (payload.error || res.statusText), 'error');
-          console.error('avatar update error:', payload.error || res.statusText);
+        if (error) {
+          showToast('Failed to update photo: ' + error.message, 'error');
+          console.error('avatar update error:', error.message);
         } else {
           showToast('Profile photo updated!', 'success');
           clearProfileCache();
@@ -300,20 +407,17 @@
       const originalLabel = btn.textContent;
       btn.textContent = 'Saving…';
 
-      const headers = await getAuthHeader();
-      const res = await fetch('/api/member/profile', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify({ name, phone, address, updated_at: new Date().toISOString() })
-      });
-      const payload = await res.json().catch(() => ({}));
+      const { error } = await db
+        .from('profiles')
+        .update({ name, phone, address, updated_at: new Date().toISOString() })
+        .eq('id', _currentProfile.id);
 
       btn.disabled = false;
       btn.textContent = originalLabel;
 
-      if (!res.ok) {
-        showToast('Failed to save: ' + (payload.error || res.statusText), 'error');
-        console.error('profile update error:', payload.error || res.statusText);
+      if (error) {
+        showToast('Failed to save: ' + error.message, 'error');
+        console.error('profile update error:', error.message);
         return;
       }
 
