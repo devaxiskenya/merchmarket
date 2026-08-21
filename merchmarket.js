@@ -110,6 +110,10 @@ function renderNav(currentPage) {
           ♡ Wishlist
           <span class="wishlist-count" id="wishlist-count" style="display:none;position:absolute;top:-8px;right:-10px;background:#c47d2e;color:#000;border-radius:50%;min-width:18px;height:18px;font-size:.7rem;font-weight:700;padding:0 4px;align-items:center;justify-content:center;">0</span>
         </a>
+        <a href="cart.html" class="${cls('cart.html')}" style="position:relative;">
+          🛒 Cart
+          <span class="cart-count" id="cart-count" style="display:none;position:absolute;top:-8px;right:-10px;background:#c47d2e;color:#000;border-radius:50%;min-width:18px;height:18px;font-size:.7rem;font-weight:700;padding:0 4px;align-items:center;justify-content:center;">0</span>
+        </a>
         <a href="orders.html" class="${cls('orders.html')}">My Orders</a>
         <a href="profile.html" class="${cls('profile.html')}" data-auth-link="member" style="display:none;">👤 Account</a>
         <a href="login.html" class="btn btn-primary" style="font-size:.85rem;padding:.55rem 1.1rem;" data-auth-link="login">Log In</a>
@@ -598,7 +602,111 @@ async function addToCartById(productId) {
   updateCartBadge();
 }
 
-/* ─── GLOBAL PRODUCT CATALOG ───────────────────────────────── */
+/* ─── REAL CART ──────────────────────────────────────────────
+   `cart_items` is a genuinely separate table/flow from `wishlists`.
+   NOTE: addToCart()/updateCartBadge() above are legacy names that
+   actually operate on the wishlist table — left as-is to avoid
+   breaking existing wishlist behavior. These functions are the
+   real cart, named distinctly to avoid confusion with the above. */
+
+async function getCart() {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    return loadLocal('mm_cart_guest', []);
+  }
+
+  const headers = await getAuthHeader();
+  const res = await fetch('/api/member/cart', { headers });
+  const payload = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    console.error('getCart error:', payload.error || res.statusText);
+    return [];
+  }
+
+  return payload.cart || [];
+}
+
+async function updateCartCount() {
+  const user = await getCurrentUser();
+  let count = 0;
+
+  if (user) {
+    const headers = await getAuthHeader();
+    const res = await fetch('/api/member/cart', { headers });
+    const payload = await res.json().catch(() => ({}));
+    const items = payload.cart || [];
+    count = items.reduce((s, i) => s + (i.quantity || 1), 0);
+  } else {
+    const local = loadLocal('mm_cart_guest', []);
+    count = local.reduce((s, i) => s + (i.quantity || 1), 0);
+  }
+
+  document.querySelectorAll('.cart-count, #cart-count').forEach(el => {
+    el.textContent = count;
+    el.style.display = count > 0 ? 'inline-flex' : 'none';
+  });
+}
+window.updateCartCount = updateCartCount;
+
+async function addProductToCartRaw(productId, name, price, seller, imageSrc, stock) {
+  if (stock === 0) { showToast('Out of stock!', 'error'); return; }
+
+  const user = await getCurrentUser();
+
+  if (!user) {
+    let cart = loadLocal('mm_cart_guest', []);
+    const existing = cart.find(i => i.product_id === productId);
+    if (existing) existing.quantity++;
+    else cart.push({ product_id: productId, name, price, seller, quantity: 1, image: imageSrc });
+    saveLocal('mm_cart_guest', cart);
+    showToast(`${name} added to cart!`, 'success');
+    updateCartCount();
+    return;
+  }
+
+  const headers = await getAuthHeader();
+  const res = await fetch('/api/member/cart', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ product_id: productId, quantity: 1 })
+  });
+  const payload = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    console.error('addProductToCart error:', payload.error || res.statusText);
+    showToast('Could not add item to cart.', 'error');
+    return;
+  }
+
+  showToast(`${name} added to cart!`, 'success');
+  updateCartCount();
+}
+
+// Called from the 🛒 quick-add icon on marketplace product cards
+async function addProductToCart(btn) {
+  if (btn.disabled) return;
+  const card     = btn.closest('.product-card');
+  const id       = card.dataset.id;
+  const title    = card.querySelector('.product-title')?.textContent.trim() || 'Item';
+  const priceRaw = card.querySelector('.product-price')?.textContent.trim() || 'KES 0';
+  const price    = parseFloat(priceRaw.replace(/[^0-9.]/g, '')) || 0;
+  const seller   = card.querySelector('.seller-name')?.textContent.trim() || 'MerchMarket';
+  const imageSrc = card.querySelector('img')?.src || '';
+  const stock    = parseInt(card.dataset.stock) || 999;
+  await addProductToCartRaw(id, title, price, seller, imageSrc, stock);
+}
+
+// Called from product detail / modal contexts (uses product id directly)
+async function addProductToCartById(productId) {
+  const product = currentProducts.find(p => p.id === productId);
+  if (!product) { showToast('Product not found', 'error'); return; }
+  const imageSrc = product.images?.[0]?.url || product.images?.[0] || '';
+  await addProductToCartRaw(productId, product.name, product.price, product.seller, imageSrc, product.stock);
+}
+
+
 // Products are stored in Supabase `products` table. Schema expected:
 //   id, brand_id, name, price, seller, category, wear_category,
 //   item_type, condition, tags (jsonb), images (jsonb), stock,
@@ -786,6 +894,7 @@ function renderProductGrid(products) {
           ${p.badge && p.badge.toLowerCase() !== 'new' ? `<div class="product-badge">${safeBadge}</div>` : ''}
           ${stockBadge}
           <button class="wishlist-btn" onclick="toggleWishlist(this)">♡</button>
+          <button class="wishlist-btn" style="left:auto;right:0.9rem;" onclick="addProductToCart(this)" title="Add to Cart" ${addBtnDisabled}>🛒</button>
         </div>
         <div class="product-details">
           <div class="product-seller">
@@ -955,7 +1064,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (!isAuthPage) {
     await Promise.all([
       initNavAuth(),
-      updateCartBadge()
+      updateCartBadge(),   // legacy name — actually updates the wishlist badge
+      updateCartCount()    // real cart badge
     ]);
   }
 

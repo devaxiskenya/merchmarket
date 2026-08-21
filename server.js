@@ -306,6 +306,120 @@ app.post('/api/member/wishlist/clear', requireAuth, async (req, res) => {
   }
 });
 
+app.get('/api/member/cart', requireAuth, async (req, res) => {
+  try {
+    const { data, error } = await req.supabase
+      .from('cart_items')
+      .select(`
+        id,
+        quantity,
+        products (
+          id, name, price, seller, images, sku, stock
+        )
+      `)
+      .eq('user_id', req.user.id)
+      .order('added_at', { ascending: false });
+
+    if (error) throw error;
+    res.json({ cart: data || [] });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to load cart', details: e.message });
+  }
+});
+
+app.post('/api/member/cart', requireAuth, async (req, res) => {
+  try {
+    const { product_id, quantity = 1 } = req.body || {};
+    if (!product_id) {
+      return res.status(400).json({ error: 'product_id is required' });
+    }
+
+    const qty = Math.max(1, parseInt(quantity, 10) || 1);
+    const { data: existing, error: existingError } = await req.supabase
+      .from('cart_items')
+      .select('id, quantity')
+      .eq('user_id', req.user.id)
+      .eq('product_id', product_id)
+      .maybeSingle();
+
+    if (existingError) throw existingError;
+
+    if (existing) {
+      const { error: updateError } = await req.supabase
+        .from('cart_items')
+        .update({ quantity: existing.quantity + qty })
+        .eq('id', existing.id);
+      if (updateError) throw updateError;
+      return res.json({ ok: true, updated: true });
+    }
+
+    const { error: insertError } = await req.supabase
+      .from('cart_items')
+      .insert({ user_id: req.user.id, product_id, quantity: qty, added_at: new Date().toISOString() });
+
+    if (insertError) throw insertError;
+    res.json({ ok: true, updated: false });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to update cart', details: e.message });
+  }
+});
+
+// Sets an exact quantity (used by the +/- controls on cart.html), unlike the
+// POST route above which only increments. Zero-row updates (wrong user,
+// deleted row) are checked explicitly rather than trusted as success.
+app.patch('/api/member/cart/:id', requireAuth, async (req, res) => {
+  try {
+    const qty = parseInt(req.body?.quantity, 10);
+    if (!Number.isFinite(qty) || qty < 1) {
+      return res.status(400).json({ error: 'quantity must be a positive integer' });
+    }
+
+    const { data, error } = await req.supabase
+      .from('cart_items')
+      .update({ quantity: qty })
+      .eq('id', req.params.id)
+      .eq('user_id', req.user.id)
+      .select();
+
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      return res.status(404).json({ error: 'Cart item not found' });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to update cart item', details: e.message });
+  }
+});
+
+app.delete('/api/member/cart/:id', requireAuth, async (req, res) => {
+  try {
+    const { error } = await req.supabase
+      .from('cart_items')
+      .delete()
+      .eq('id', req.params.id)
+      .eq('user_id', req.user.id);
+
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to remove cart item', details: e.message });
+  }
+});
+
+app.post('/api/member/cart/clear', requireAuth, async (req, res) => {
+  try {
+    const { error } = await req.supabase
+      .from('cart_items')
+      .delete()
+      .eq('user_id', req.user.id);
+
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to clear cart', details: e.message });
+  }
+});
+
 app.post('/api/member/orders', requireAuth, async (req, res) => {
   try {
     const { orders } = req.body || {};
