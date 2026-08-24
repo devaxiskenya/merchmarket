@@ -138,7 +138,7 @@
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
       console.error('updateOrderStatus error:', payload.error || res.statusText);
-      showToast('Failed to update order status', 'error');
+      showToast(payload.error || 'Failed to update order status', 'error');
       return;
     }
     showToast(`Order marked as ${newStatus}`, 'success');

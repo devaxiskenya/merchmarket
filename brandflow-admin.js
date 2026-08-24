@@ -174,9 +174,12 @@ function renderOrdersTable(orders) {
     const date  = order.created_at ? new Date(order.created_at).toLocaleDateString('en-KE') : '—';
     const total = parseFloat(order.total_amount) || 0;
     const st    = String(order.status || 'pending');
+    const payStatus = String(order.payment_status || 'unpaid');
+    const payColor = payStatus === 'paid' ? '#4caf50' : (payStatus === 'failed' ? '#f44336' : '#ff9800');
     const safeName = escapeValue(cust.name || '—');
     const safeEmail = escapeValue(cust.email || '—');
     const safeLocation = escapeValue(order.location || 'Nairobi, Kenya');
+    const isPaid = payStatus === 'paid';
 
     return `
       <tr>
@@ -186,10 +189,13 @@ function renderOrdersTable(orders) {
         <td>${date}<br><small style="color:#a0a0a0;">Updated: ${date}</small></td>
         <td>${safeLocation}</td>
         <td>KES ${total.toLocaleString()}</td>
-        <td><span class="status ${st}">${st.toUpperCase()}</span></td>
+        <td>
+          <span class="status ${st}">${st.toUpperCase()}</span>
+          <br><span style="display:inline-block;margin-top:.3rem;padding:.15rem .6rem;border-radius:100px;font-size:.68rem;font-weight:700;background:${payColor}22;color:${payColor};border:1px solid ${payColor}55;">${payStatus.toUpperCase()}</span>
+        </td>
         <td>
           <a class="action-btn" href="view-order.html?id=${escapeValue(order.id)}" style="text-decoration:none;">View</a>
-          ${st === 'pending' ? `<button class="action-btn" style="background:#4caf50;color:#fff;" onclick="updateOrderStatus('${escapeValue(order.id)}','confirmed')">Confirm</button>` : ''}
+          ${st === 'pending' ? `<button class="action-btn" style="background:#4caf50;color:#fff;" ${isPaid ? '' : 'disabled title="Waiting for payment"'} onclick="updateOrderStatus('${escapeValue(order.id)}','confirmed')">Confirm</button>` : ''}
           ${st === 'confirmed' ? `<button class="action-btn" style="background:#2196f3;color:#fff;" onclick="updateOrderStatus('${escapeValue(order.id)}','active')">Ship</button>` : ''}
           ${(st === 'active' || st === 'confirmed') ? `<button class="action-btn" style="background:#ff9800;color:#fff;" onclick="updateOrderStatus('${escapeValue(order.id)}','completed')">Complete</button>` : ''}
         </td>
@@ -209,7 +215,7 @@ async function updateOrderStatus(orderId, newStatus) {
   const payload = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    showToast('Failed to update order status', 'error');
+    showToast(payload.error || 'Failed to update order status', 'error');
     console.error('updateOrderStatus error:', payload.error || res.statusText);
     return;
   }
