@@ -209,6 +209,12 @@
   };
 
   /* ─── checkout ────────────────────────────────────────────── */
+  // Checkout now goes through Pesapal: build the grouped order payload,
+  // ask the server to create the (unpaid, pending) orders + start a
+  // Pesapal transaction, then redirect the browser to Pesapal's hosted
+  // checkout page. The cart is only cleared server-side once the IPN
+  // webhook confirms payment — see /api/payments/pesapal/ipn — so we
+  // do NOT clear the cart here.
 
   window.checkoutCart = async function checkoutCart() {
     if (!_cartCache.length) return;
@@ -219,66 +225,78 @@
       return;
     }
 
-    const brandMap = await getCatalogBrandMap();
+    const btn = document.querySelector('.checkout-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Redirecting to payment…'; }
 
-    const bySeller = {};
-    _cartCache.forEach(item => {
-      const seller = item.seller || 'MerchMarket';
-      if (!bySeller[seller]) bySeller[seller] = [];
-      bySeller[seller].push(item);
-    });
+    try {
+      const brandMap = await getCatalogBrandMap();
 
-    let ordersCreated = 0;
-    const deliveryLocation = (user.address && user.address.trim()) || 'Nairobi, Kenya';
+      const bySeller = {};
+      _cartCache.forEach(item => {
+        const seller = item.seller || 'MerchMarket';
+        if (!bySeller[seller]) bySeller[seller] = [];
+        bySeller[seller].push(item);
+      });
 
-    for (const [seller, items] of Object.entries(bySeller)) {
-      const brandId = brandMap[seller];
-      if (!brandId) continue;
+      const orders = [];
+      const deliveryLocation = (user.address && user.address.trim()) || 'Nairobi, Kenya';
 
-      const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-      const orderPayload = {
-        brand_id: brandId,
-        total_amount: total.toFixed(2),
-        location: deliveryLocation,
-        items: items.map(i => ({
-          product_id: i.id,
-          quantity: i.quantity,
-          sku: i.sku || '',
-          unit_price: i.price
-        }))
-      };
+      for (const [seller, items] of Object.entries(bySeller)) {
+        const brandId = brandMap[seller];
+        if (!brandId) continue;
+
+        const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+        orders.push({
+          brand_id: brandId,
+          total_amount: total.toFixed(2),
+          location: deliveryLocation,
+          items: items.map(i => ({
+            product_id: i.id,
+            quantity: i.quantity,
+            sku: i.sku || '',
+            unit_price: i.price
+          }))
+        });
+      }
+
+      if (orders.length === 0) {
+        showToast('No valid brand sellers found.', 'error');
+        return;
+      }
+
+      const [firstName, ...rest] = (user.name || 'Customer').trim().split(/\s+/);
 
       const headers = await getAuthHeader();
-      const res = await fetch('/api/member/orders', {
+      const res = await fetch('/api/payments/pesapal/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify({ orders: [orderPayload] })
+        body: JSON.stringify({
+          orders,
+          billing_address: {
+            email: user.email || '',
+            phone: user.phone || '',
+            first_name: firstName || 'Customer',
+            last_name: rest.join(' '),
+            line_1: deliveryLocation
+          }
+        })
       });
       const payload = await res.json().catch(() => ({}));
 
-      if (!res.ok) {
-        console.error(`Order insert error for seller ${seller}:`, payload.error || res.statusText);
-        continue;
+      if (!res.ok || !payload.redirect_url) {
+        console.error('pesapal initiate error:', payload.error || res.statusText, payload.details || '');
+        showToast(payload.error || 'Could not start payment. Try again.', 'error');
+        return;
       }
 
-      ordersCreated++;
-    }
+      // Stash the checkout_group_id so payment-return.html can poll for it
+      // even if Pesapal doesn't echo it back on the return trip.
+      try { sessionStorage.setItem('mm_last_checkout_group_id', payload.checkout_group_id); } catch (e) {}
 
-    if (ordersCreated === 0) {
-      showToast('No valid brand sellers found.', 'error');
-      return;
+      window.location.href = payload.redirect_url;
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Proceed to Checkout →'; }
     }
-
-    const headers = await getAuthHeader();
-    const clearRes = await fetch('/api/member/cart/clear', { method: 'POST', headers });
-    const clearPayload = await clearRes.json().catch(() => ({}));
-    if (!clearRes.ok) {
-      console.error('Clear cart error:', clearPayload.error || clearRes.statusText);
-    }
-
-    render();
-    showToast('Order request sent! ✅', 'success');
-    setTimeout(() => { window.location.href = 'orders.html'; }, 1200);
   };
 
   /* ─── boot ────────────────────────────────────────────────── */

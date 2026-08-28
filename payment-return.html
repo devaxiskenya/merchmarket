@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MerchMarket — Confirming Payment…</title>
+  <!--
+    Pesapal redirects the browser here after checkout (callback_url).
+    It appends ?OrderTrackingId=...&OrderMerchantReference=... as query
+    params. The IPN webhook (server-to-server) is what actually marks the
+    order paid — it can land a few seconds before or after this redirect —
+    so this page polls /api/payments/pesapal/status until it settles
+    rather than trusting the redirect itself.
+  -->
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%;background:#0a0a0a;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+    .wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.2rem;padding:2rem;text-align:center}
+    .logo{font-size:1.8rem;font-weight:800;background:linear-gradient(135deg,#c47d2e,#ffd8b5);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+    .msg{color:#a0a0a0;font-size:.95rem;min-height:1.4rem;max-width:380px;line-height:1.6}
+    .spinner{width:36px;height:36px;border:3px solid rgba(196,125,46,.2);border-top-color:#c47d2e;border-radius:50%;animation:spin .7s linear infinite}
+    .icon{font-size:2.8rem}
+    .btn{display:none;margin-top:.6rem;padding:.8rem 1.6rem;background:linear-gradient(135deg,#c47d2e,#ffd8b5);color:#0a0a0a;border:none;border-radius:10px;font-weight:700;font-size:.9rem;cursor:pointer;text-decoration:none;}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo">MerchMarket</div>
+    <div class="spinner" id="spinner"></div>
+    <div class="icon" id="icon" style="display:none;"></div>
+    <p class="msg" id="msg">Confirming your payment…</p>
+    <a class="btn" id="actionBtn" href="orders.html">View My Orders →</a>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="merchmarket.js"></script>
+
+  <script>
+    const spinner  = document.getElementById('spinner');
+    const iconEl   = document.getElementById('icon');
+    const msgEl    = document.getElementById('msg');
+    const actionEl = document.getElementById('actionBtn');
+
+    function setState({ spin, icon, msg, btnLabel, btnHref }) {
+      spinner.style.display = spin ? 'block' : 'none';
+      if (icon) { iconEl.textContent = icon; iconEl.style.display = 'block'; } else { iconEl.style.display = 'none'; }
+      msgEl.textContent = msg;
+      if (btnLabel) {
+        actionEl.textContent = btnLabel;
+        actionEl.href = btnHref || 'orders.html';
+        actionEl.style.display = 'inline-block';
+      }
+    }
+
+    function getCheckoutGroupId() {
+      const params = new URLSearchParams(location.search);
+      // Pesapal's own param is the merchant reference we set at initiate-time,
+      // which IS our checkout_group_id.
+      return params.get('OrderMerchantReference')
+          || params.get('orderMerchantReference')
+          || sessionStorage.getItem('mm_last_checkout_group_id');
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    async function pollStatus(checkoutGroupId) {
+      const headers = await getAuthHeader();
+      const MAX_ATTEMPTS = 10;
+      const DELAY_MS = 2500;
+
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        const res = await fetch(`/api/payments/pesapal/status?checkout_group_id=${encodeURIComponent(checkoutGroupId)}`, { headers });
+        const payload = await res.json().catch(() => ({}));
+
+        if (res.ok && payload.payment_status) {
+          if (payload.payment_status === 'paid')   return 'paid';
+          if (payload.payment_status === 'failed') return 'failed';
+          // 'unpaid' — Pesapal or our IPN hasn't settled yet, keep polling.
+        } else if (res.status === 404) {
+          // No orders match yet (rare race with the initiate write) — keep polling.
+        } else {
+          console.error('pesapal status error:', payload.error || res.statusText);
+        }
+
+        await sleep(DELAY_MS);
+      }
+
+      return 'unknown';
+    }
+
+    async function run() {
+      const user = await getCurrentUser();
+      if (!user) {
+        setState({
+          spin: false, icon: '🔒',
+          msg: 'Please log in to see your payment result.',
+          btnLabel: 'Go to Login', btnHref: 'login.html'
+        });
+        return;
+      }
+
+      const checkoutGroupId = getCheckoutGroupId();
+      if (!checkoutGroupId) {
+        setState({
+          spin: false, icon: '⚠️',
+          msg: "We couldn't find a checkout to confirm. If you completed payment, check My Orders.",
+          btnLabel: 'View My Orders'
+        });
+        return;
+      }
+
+      try { sessionStorage.removeItem('mm_last_checkout_group_id'); } catch (e) {}
+
+      const result = await pollStatus(checkoutGroupId);
+
+      if (result === 'paid') {
+        setState({
+          spin: false, icon: '✅',
+          msg: 'Payment confirmed! Your order has been placed.',
+          btnLabel: 'View My Orders'
+        });
+        setTimeout(() => { window.location.href = 'orders.html'; }, 1800);
+      } else if (result === 'failed') {
+        setState({
+          spin: false, icon: '❌',
+          msg: 'Payment was not successful. You can try again from your cart.',
+          btnLabel: 'Back to Cart', btnHref: 'cart.html'
+        });
+      } else {
+        setState({
+          spin: false, icon: 'ℹ️',
+          msg: "Still waiting on confirmation from Pesapal — this can take a minute. Check My Orders shortly; it will update automatically once confirmed.",
+          btnLabel: 'View My Orders'
+        });
+      }
+    }
+
+    run().catch(err => {
+      console.error('payment-return error:', err);
+      setState({
+        spin: false, icon: '⚠️',
+        msg: 'Something went wrong confirming your payment. Please check My Orders.',
+        btnLabel: 'View My Orders'
+      });
+    });
+  </script>
+</body>
+</html>

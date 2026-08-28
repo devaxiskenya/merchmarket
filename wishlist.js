@@ -258,90 +258,13 @@
     render();
   };
 
-  /* ─── place orders ─────────────────────────────────────────── */
-
-  window.placeWishlistOrders = async function placeWishlistOrders() {
-    const cart = await loadWishlist();
-    if (!cart.length) return;
-
-    const user = await getCurrentUser();
-    if (!user) {
-      if (typeof showToast === 'function') showToast('Please sign in to place an order.', 'error');
-      return;
-    }
-
-    const brandMap = await getCatalogBrandMap();
-
-    // Group by seller
-    const bySeller = {};
-    cart.forEach(item => {
-      const seller = item.seller || 'MerchMarket';
-      if (!bySeller[seller]) bySeller[seller] = [];
-      bySeller[seller].push(item);
-    });
-
-    let ordersCreated = 0;
-
-    const deliveryLocation = (user.address && user.address.trim()) || 'Nairobi, Kenya';
-
-    for (const [seller, items] of Object.entries(bySeller)) {
-      const brandId = brandMap[seller];
-      if (!brandId) continue;
-
-      const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-      const orderPayload = {
-        brand_id: brandId,
-        total_amount: total.toFixed(2),
-        location: deliveryLocation,
-        items: items.map(i => ({
-          product_id: i.id,
-          quantity: i.quantity,
-          sku: i.sku || '',
-          unit_price: i.price
-        }))
-      };
-
-      const headers = await getAuthHeader();
-      const res = await fetch('/api/member/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify({ orders: [orderPayload] })
-      });
-      const payload = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        console.error(`Order insert error for seller ${seller}:`, payload.error || res.statusText);
-        continue;
-      }
-
-      ordersCreated++;
-    }
-
-    if (ordersCreated === 0) {
-      if (typeof showToast === 'function') showToast('No valid brand sellers found.', 'error');
-      return;
-    }
-
-    // Clear wishlist after placing orders
-    const headers = await getAuthHeader();
-    const clearRes = await fetch('/api/member/wishlist/clear', {
-      method: 'POST',
-      headers
-    });
-    const clearPayload = await clearRes.json().catch(() => ({}));
-
-    if (!clearRes.ok) {
-      console.error('Clear wishlist error:', clearPayload.error || clearRes.statusText);
-    }
-
-    render();
-
-    if (typeof showToast === 'function') showToast('Wishlist order request sent! ✅', 'success');
-    setTimeout(() => { window.location.href = 'orders.html'; }, 1200);
-  };
-
   /* ─── boot ─────────────────────────────────────────────────── */
-
+  // NOTE: Wishlist is browsing/vendor-info only — it no longer places
+  // orders directly (that used raw client-side Supabase inserts with no
+  // Pesapal payment step, inconsistent with the payment-gated order flow
+  // now in place). Checkout happens exclusively through cart.html ->
+  // /api/payments/pesapal/initiate. See wishlist.html for the "Go to Cart"
+  // link that replaced the old "Request Order" button.
   document.addEventListener('DOMContentLoaded', () => {
     render();
     updateWishlistBadge();
