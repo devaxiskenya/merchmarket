@@ -1,5 +1,4 @@
 const express = require('express');
-const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
@@ -8,7 +7,6 @@ app.use(express.json({ limit: '2mb' }));
 
 // Static frontend files (brand-only pages are protected below)
 const PUBLIC_DIR = __dirname;
-const DB_PATH = path.join(__dirname, 'db.json');
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://omyzcnizwxumvookotsy.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || 'sb_publishable_2Dvox3zHhG4WG7An-sn0tQ_eZ9z6xh8';
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
@@ -143,28 +141,6 @@ function pesapalStatusToPaymentStatus(statusPayload) {
   return 'unpaid'; // pending/invalid/reversed — leave as unpaid, IPN will fire again on change
 }
 
-function ensureDb() {
-  if (!fs.existsSync(DB_PATH)) {
-    const initial = {
-      merchUsers: [],
-      merchInventory: {}, // keyed by brandId
-      merchOrders: {}, // keyed by brandId
-      merchCart: []
-    };
-    fs.writeFileSync(DB_PATH, JSON.stringify(initial, null, 2));
-  }
-}
-
-function readDb() {
-  ensureDb();
-  const raw = fs.readFileSync(DB_PATH, 'utf8');
-  return JSON.parse(raw);
-}
-
-function writeDb(db) {
-  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
-}
-
 function createSupabaseClient(accessToken) {
   return createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: {
@@ -286,18 +262,6 @@ app.use((req, res, next) => {
   }
 
   next();
-});
-
-app.get('/api/db', (req, res) => {
-  res.status(404).json({ error: 'Database API disabled' });
-});
-
-app.post('/api/db', (req, res) => {
-  res.status(404).json({ error: 'Database API disabled' });
-});
-
-app.patch('/api/db/merge', (req, res) => {
-  res.status(404).json({ error: 'Database API disabled' });
 });
 
 app.get('/api/member/profile', requireAuth, async (req, res) => {
