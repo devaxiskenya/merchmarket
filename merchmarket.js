@@ -518,96 +518,47 @@ async function updateWishlistBadge() {
 const updateCartBadge = updateWishlistBadge;
 window.updateWishlistBadge = updateWishlistBadge;
 
-// Called from product card "Add to Wishlist" button
-async function addToCart(btn) {
-  if (btn.disabled) return;
+/* ─── WISHLIST HEART TOGGLE (marketplace product cards) ────────
+   Tracks which products the current user has wishlisted, so the
+   ♡/♥ icon reflects real state on load and actually persists on
+   click — previously this button only toggled a CSS class and
+   never called any API. Map is productId -> wishlist row id
+   (needed for DELETE), or the string 'guest' for guest sessions
+   where there's no row id, just a localStorage array keyed by
+   product_id. */
 
-  const card     = btn.closest('.product-card');
-  const id       = card.dataset.id;
-  const title    = card.querySelector('.product-title')?.textContent.trim() || 'Item';
-  const priceRaw = card.querySelector('.product-price')?.textContent.trim() || 'KES 0';
-  const price    = parseFloat(priceRaw.replace(/[^0-9.]/g, '')) || 0;
-  const seller   = card.querySelector('.seller-name')?.textContent.trim() || 'MerchMarket';
-  const imageSrc = card.querySelector('img')?.src || '';
-  const stock    = parseInt(card.dataset.stock) || 999;
+let wishlistedProductMap = new Map();
 
-  if (stock === 0) { showToast('Out of stock!', 'error'); return; }
-
+async function loadWishlistedMap() {
+  wishlistedProductMap = new Map();
   const user = await getCurrentUser();
 
   if (!user) {
-    // Guest: use localStorage
-    let wishlist = loadLocal('mm_wishlist_guest', []);
-    const existing = wishlist.find(i => i.product_id === id);
-    if (existing) existing.quantity++;
-    else wishlist.push({ product_id: id, name: title, price, seller, quantity: 1, image: imageSrc });
-    saveLocal('mm_wishlist_guest', wishlist);
-    showToast(`${title} added to wishlist!`, 'success');
-    updateCartBadge();
+    loadLocal('mm_wishlist_guest', []).forEach(i => wishlistedProductMap.set(i.product_id, 'guest'));
     return;
   }
 
   const headers = await getAuthHeader();
-  const res = await fetch('/api/member/wishlist', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body: JSON.stringify({ product_id: id, quantity: 1 })
-  });
+  const res = await fetch('/api/member/wishlist', { headers });
   const payload = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    console.error('addToCart wishlist error:', payload.error || res.statusText);
-    showToast('Could not save wishlist item.', 'error');
+    console.error('loadWishlistedMap error:', payload.error || res.statusText);
     return;
   }
 
-  showToast(`${title} added to wishlist!`, 'success');
-  updateCartBadge();
-}
-
-// Called from product detail / modal (uses product id directly)
-async function addToCartById(productId) {
-  const product = currentProducts.find(p => p.id === productId);
-  if (!product) { showToast('Product not found', 'error'); return; }
-
-  const user = await getCurrentUser();
-  const imageSrc = product.images?.[0]?.url || product.images?.[0] || '';
-
-  if (!user) {
-    let wishlist = loadLocal('mm_wishlist_guest', []);
-    const existing = wishlist.find(i => i.product_id === productId);
-    if (existing) existing.quantity++;
-    else wishlist.push({ product_id: productId, name: product.name, price: product.price, seller: product.seller, quantity: 1, image: imageSrc });
-    saveLocal('mm_wishlist_guest', wishlist);
-    showToast(`${product.name} added to wishlist!`, 'success');
-    updateCartBadge();
-    return;
-  }
-
-  const headers = await getAuthHeader();
-  const res = await fetch('/api/member/wishlist', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body: JSON.stringify({ product_id: productId, quantity: 1 })
+  (payload.wishlist || []).forEach(row => {
+    const pid = row.products?.id;
+    if (pid) wishlistedProductMap.set(pid, row.id);
   });
-  const payload = await res.json().catch(() => ({}));
-
-  if (!res.ok) {
-    console.error('addToCartById wishlist error:', payload.error || res.statusText);
-    showToast('Could not save wishlist item.', 'error');
-    return;
-  }
-
-  showToast(`${product.name} added to wishlist!`, 'success');
-  updateCartBadge();
 }
 
 /* ─── REAL CART ──────────────────────────────────────────────
    `cart_items` is a genuinely separate table/flow from `wishlists`.
-   NOTE: addToCart()/updateCartBadge() above are legacy names that
-   actually operate on the wishlist table — left as-is to avoid
-   breaking existing wishlist behavior. These functions are the
-   real cart, named distinctly to avoid confusion with the above. */
+   updateCartBadge above is still just an alias for updateWishlistBadge
+   (kept for a legacy boot-sequence caller) — it updates the wishlist
+   count, not the cart count. Cart badge state is tracked separately
+   below via updateCartCount(). */
 
 async function getCart() {
   const user = await getCurrentUser();
@@ -684,7 +635,7 @@ async function addProductToCartRaw(productId, name, price, seller, imageSrc, sto
   updateCartCount();
 }
 
-// Called from the 🛒 quick-add icon on marketplace product cards
+// Called from the primary "Add to Cart" button on marketplace product cards
 async function addProductToCart(btn) {
   if (btn.disabled) return;
   const card     = btn.closest('.product-card');
@@ -836,7 +787,11 @@ function applyFilters() {
 async function initMarketplace() {
   console.log('=== initMarketplace START ===');
 
-  currentProducts = await fetchAllProducts();
+  const [products] = await Promise.all([
+    fetchAllProducts(),
+    loadWishlistedMap()
+  ]);
+  currentProducts = products;
 
   console.log('Total available products:', currentProducts.length);
 
@@ -876,8 +831,11 @@ function renderProductGrid(products) {
 
   grid.innerHTML = products.map(p => {
     const stockBadge  = p.stock < 5 ? `<div class="product-badge">${p.stock} left</div>` : '';
-    const addBtnText  = p.stock === 0 ? 'Out of Stock' : 'Add to Wishlist';
+    const addBtnText  = p.stock === 0 ? 'Out of Stock' : 'Add to Cart';
     const addBtnDisabled = p.stock === 0 ? 'disabled style="opacity:.6;cursor:not-allowed"' : '';
+    const isWishlisted = wishlistedProductMap.has(p.id);
+    const wishlistActiveClass = isWishlisted ? ' active' : '';
+    const wishlistGlyph = isWishlisted ? '♥' : '♡';
     const imageSrc    = p.images?.[0]?.url || '';
     const safeName     = escapeHtml(p.name);
     const safeSeller   = escapeHtml(p.seller);
@@ -893,8 +851,7 @@ function renderProductGrid(products) {
           ${imageHtml}
           ${p.badge && p.badge.toLowerCase() !== 'new' ? `<div class="product-badge">${safeBadge}</div>` : ''}
           ${stockBadge}
-          <button class="wishlist-btn" onclick="toggleWishlist(this)">♡</button>
-          <button class="wishlist-btn" style="left:auto;right:0.9rem;" onclick="addProductToCart(this)" title="Add to Cart" ${addBtnDisabled}>🛒</button>
+          <button class="wishlist-btn${wishlistActiveClass}" onclick="toggleWishlist(this)" title="${isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'}">${wishlistGlyph}</button>
         </div>
         <div class="product-details">
           <div class="product-seller">
@@ -905,17 +862,87 @@ function renderProductGrid(products) {
           ${p.condition ? `<div style="font-size:.75rem;color:#a0a0a0;margin-bottom:.3rem;text-transform:capitalize;">Condition: ${safeCondition}</div>` : ''}
           <div class="product-footer">
             <div class="product-price">KES ${p.price.toFixed(0)}</div>
-            <button class="add-to-cart-btn" onclick="addToCart(this)" ${addBtnDisabled}>${addBtnText}</button>
+            <button class="add-to-cart-btn" onclick="addProductToCart(this)" ${addBtnDisabled}>${addBtnText}</button>
           </div>
         </div>
       </div>`;
   }).join('');
 }
 
-function toggleWishlist(btn) {
-  btn.classList.toggle('active');
-  btn.textContent = btn.classList.contains('active') ? '♥' : '♡';
-  showToast(btn.classList.contains('active') ? 'Added to wishlist!' : 'Removed from wishlist', 'info');
+async function toggleWishlist(btn) {
+  if (btn.disabled) return;
+
+  const card      = btn.closest('.product-card');
+  const productId = card?.dataset.id;
+  if (!productId) return;
+
+  const wasActive = btn.classList.contains('active');
+  const title     = card.querySelector('.product-title')?.textContent.trim() || 'Item';
+
+  btn.disabled = true;
+
+  try {
+    if (wasActive) {
+      // Currently wishlisted — remove it
+      const user = await getCurrentUser();
+      if (!user) {
+        const local = loadLocal('mm_wishlist_guest', []).filter(i => i.product_id !== productId);
+        saveLocal('mm_wishlist_guest', local);
+      } else {
+        const rowId = wishlistedProductMap.get(productId);
+        if (rowId && rowId !== 'guest') {
+          const headers = await getAuthHeader();
+          const res = await fetch(`/api/member/wishlist/${rowId}`, { method: 'DELETE', headers });
+          if (!res.ok) throw new Error('Failed to remove from wishlist');
+        }
+      }
+      wishlistedProductMap.delete(productId);
+      btn.classList.remove('active');
+      btn.textContent = '♡';
+      showToast(`${title} removed from wishlist`, 'info');
+
+    } else {
+      // Not wishlisted yet — add it
+      const user    = await getCurrentUser();
+      const product = currentProducts.find(p => p.id === productId);
+
+      if (!user) {
+        const local = loadLocal('mm_wishlist_guest', []);
+        if (!local.some(i => i.product_id === productId)) {
+          local.push({
+            product_id: productId,
+            name: title,
+            price: product?.price || 0,
+            seller: product?.seller || 'MerchMarket',
+            quantity: 1,
+            image: product?.images?.[0]?.url || ''
+          });
+          saveLocal('mm_wishlist_guest', local);
+        }
+        wishlistedProductMap.set(productId, 'guest');
+      } else {
+        const headers = await getAuthHeader();
+        const res = await fetch('/api/member/wishlist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...headers },
+          body: JSON.stringify({ product_id: productId, quantity: 1 })
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error || 'Failed to add to wishlist');
+        if (payload.id) wishlistedProductMap.set(productId, payload.id);
+      }
+      btn.classList.add('active');
+      btn.textContent = '♥';
+      showToast(`${title} added to wishlist!`, 'success');
+    }
+
+    updateWishlistBadge();
+  } catch (e) {
+    console.error('toggleWishlist error:', e.message);
+    showToast('Could not update wishlist. Try again.', 'error');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 /* ─── SOCIAL FEED ─────────────────────────────────────────── */

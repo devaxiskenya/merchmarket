@@ -356,20 +356,24 @@ app.post('/api/member/wishlist', requireAuth, async (req, res) => {
     if (existingError) throw existingError;
 
     if (existing) {
-      const { error: updateError } = await req.supabase
+      const { data: updated, error: updateError } = await req.supabase
         .from('wishlists')
         .update({ quantity: existing.quantity + qty })
-        .eq('id', existing.id);
+        .eq('id', existing.id)
+        .select('id')
+        .single();
       if (updateError) throw updateError;
-      return res.json({ ok: true, updated: true });
+      return res.json({ ok: true, updated: true, id: updated.id });
     }
 
-    const { error: insertError } = await req.supabase
+    const { data: inserted, error: insertError } = await req.supabase
       .from('wishlists')
-      .insert({ user_id: req.user.id, product_id, quantity: qty });
+      .insert({ user_id: req.user.id, product_id, quantity: qty })
+      .select('id')
+      .single();
 
     if (insertError) throw insertError;
-    res.json({ ok: true, updated: false });
+    res.json({ ok: true, updated: false, id: inserted.id });
   } catch (e) {
     res.status(500).json({ error: 'Failed to update wishlist', details: e.message });
   }
