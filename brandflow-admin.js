@@ -7,7 +7,8 @@
      products     — id, brand_id, name, sku, stock, price, images(jsonb),
                     wear_category, item_type, tags(jsonb), seller, condition
      profiles     — id, name, email, type
-     vendor_payments — brand_id, method, label, details(jsonb), updated_at
+   Payout details (vendor_payments table, /api/brand/payments) now live
+   in brand-profile.html, not this dashboard.
    ============================================================ */
 
 /* ─── TAB ROUTER ──────────────────────────────────────────── */
@@ -31,7 +32,6 @@ function tabSwitch(tabName) {
   const loaders = {
     orders:    loadOrdersTab,
     inventory: loadInventoryTab,
-    payments:  loadPaymentsTab,
     customers: loadCustomersTab,
   };
   if (loaders[tabName]) loaders[tabName]();
@@ -78,14 +78,8 @@ document.addEventListener('DOMContentLoaded', () => {
     _debounce(() => loadOrdersTab(), 300)
   );
 
-  // Save payment details
-  document.getElementById('save-payment-details')?.addEventListener('click', savePaymentDetails);
-
   // Reset DB
   document.getElementById('reset-db')?.addEventListener('click', resetDatabase);
-
-  // Payment method label switcher
-  wirePaymentMethodSwitcher();
 
   // Load the tab requested via ?tab=inventory (e.g. after saving an item on
   // add-item.html), falling back to Orders as the default landing tab.
@@ -300,95 +294,10 @@ async function deleteInventoryItem(productId) {
   loadInventoryTab();
 }
 
-/* ─── PAYMENTS TAB ────────────────────────────────────────── */
-
-async function loadPaymentsTab() {
-  const brand = await getBrandUser();
-  if (!brand) return;
-
-  const res = await fetch('/api/brand/payments', { headers: await getAuthHeader() });
-  const payload = await res.json().catch(() => ({}));
-
-  if (!res.ok) { console.error('loadPaymentsTab error:', payload.error || res.statusText); return; }
-  const data = payload.payments;
-  if (!data) return; // no saved payment details yet
-
-  const d = data.details || {};
-  document.getElementById('pm-method').value         = data.method   || 'mpesa';
-  document.getElementById('pm-label').value          = data.label    || '';
-  document.getElementById('pm-detail').value         = d.phone || d.accountNumber || d.email || '';
-  document.getElementById('pm-account-name').value   = d.accountName   || '';
-  document.getElementById('pm-bank-name').value      = d.bankName      || '';
-  document.getElementById('pm-account-number').value = d.accountNumber || '';
-  document.getElementById('pm-email').value          = d.email         || '';
-  document.getElementById('pm-instructions').value   = d.deliveryInstructions || '';
-
-  wirePaymentMethodSwitcher();
-}
-
-async function savePaymentDetails() {
-  const brand = await getBrandUser();
-  if (!brand) { showToast('Brand login required', 'error'); return; }
-
-  const method = document.getElementById('pm-method').value;
-  const label  = document.getElementById('pm-label').value.trim();
-  const phone  = document.getElementById('pm-detail').value.trim();
-
-  const details = {
-    phone:                phone,
-    accountName:          document.getElementById('pm-account-name').value.trim(),
-    bankName:             document.getElementById('pm-bank-name').value.trim(),
-    accountNumber:        document.getElementById('pm-account-number').value.trim(),
-    email:                document.getElementById('pm-email').value.trim(),
-    deliveryInstructions: document.getElementById('pm-instructions').value.trim()
-  };
-
-  // Remove empty keys
-  Object.keys(details).forEach(k => { if (!details[k]) delete details[k]; });
-
-  const res = await fetch('/api/brand/payments', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
-    body: JSON.stringify({ method, label, details })
-  });
-  const payload = await res.json().catch(() => ({}));
-
-  if (!res.ok) {
-    showToast('Failed to save payment details: ' + (payload.error || res.statusText), 'error');
-    console.error('savePaymentDetails error:', payload.error || res.statusText);
-    return;
-  }
-
-  showToast('Payment details saved!', 'success');
-}
-
-function wirePaymentMethodSwitcher() {
-  const methodEl    = document.getElementById('pm-method');
-  const detailLabel = document.getElementById('pm-detail-label');
-  const pmDetail    = document.getElementById('pm-detail');
-  if (!methodEl || !detailLabel) return;
-
-  const update = () => {
-    const m = methodEl.value;
-    if (m === 'mpesa') {
-      detailLabel.textContent = 'M-Pesa Phone / Paybill / Shortcode';
-      pmDetail.placeholder    = 'e.g. 07xx xxx xxx or Paybill number';
-    } else if (m === 'bank') {
-      detailLabel.textContent = 'Bank Account Number';
-      pmDetail.placeholder    = 'e.g. 0123456789';
-    } else if (m === 'paypal') {
-      detailLabel.textContent = 'PayPal Email';
-      pmDetail.placeholder    = 'e.g. vendor@paypal.com';
-    } else {
-      detailLabel.textContent = 'Cash Handling Instructions';
-      pmDetail.placeholder    = 'e.g. Pay cash to rider on delivery';
-    }
-  };
-
-  methodEl.removeEventListener('change', update); // avoid double binds
-  methodEl.addEventListener('change', update);
-  update();
-}
+/* ─── PAYOUT DETAILS ──────────────────────────────────────── */
+// Moved to brand-profile.html — this dashboard no longer has a
+// Payment tab. brand-profile.html hits the same /api/brand/payments
+// endpoint directly.
 
 /* ─── CUSTOMERS TAB ───────────────────────────────────────── */
 

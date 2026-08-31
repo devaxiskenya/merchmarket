@@ -18,9 +18,9 @@
   <ul class="admin-nav-links">
     <li><a href="#" data-tab="orders"    class="nav-tab active">💆 Orders</a></li>
     <li><a href="#" data-tab="inventory" class="nav-tab">💎 Inventory</a></li>
-    <li><a href="#" data-tab="payments"  class="nav-tab">💳 Payment</a></li>
     <li><a href="#" data-tab="customers" class="nav-tab">👥 Customers</a></li>
     <li><a href="#" data-tab="reset"     class="nav-tab">⚠️ Reset</a></li>
+    <li><a href="brand-profile.html" style="color:#a0a0a0;font-size:.85rem;padding:1rem;">👤 Profile</a></li>
     <li><a href="index.html" style="color:#a0a0a0;font-size:.85rem;padding:1rem;">← Exit</a></li>
     <li><a href="#" data-auth-link="logout" style="color:#f44336;font-size:.85rem;padding:1rem;font-weight:600;">Sign Out</a></li>
   </ul>
@@ -86,72 +86,6 @@
       </thead>
       <tbody id="inventory-table-body"></tbody>
     </table>
-  </section>
-
-  <!-- Payments -->
-  <section id="payments" class="module">
-    <div class="module-header">
-      <h1>Vendor Payment Details</h1>
-      <div class="module-actions">
-        <button id="save-payment-details" class="btn btn-primary">Save</button>
-      </div>
-    </div>
-
-    <div class="panel" style="background:rgba(255,255,255,.04);border:1px solid rgba(170,111,2,.3);border-radius:16px;padding:1.8rem;">
-      <div class="form-row" style="margin-bottom:1rem;">
-        <div class="form-group">
-          <label>Preferred Payment Method</label>
-          <select id="pm-method" style="width:100%;padding:.85rem 1.1rem;border:1px solid var(--border-brand);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'DM Sans',sans-serif;">
-            <option value="mpesa">M-Pesa</option>
-            <option value="bank">Bank Transfer</option>
-            <option value="paypal">PayPal</option>
-            <option value="cash">Cash on Delivery</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Display Label (for customers)</label>
-          <input id="pm-label" type="text" placeholder="e.g. Paybill/Shortcode" />
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label id="pm-detail-label">M-Pesa Phone Number</label>
-        <input id="pm-detail" type="text" placeholder="e.g. 07xx xxx xxx or Paybill/Shortcode" />
-      </div>
-
-      <div class="form-row" style="margin-top:1rem;">
-        <div class="form-group">
-          <label>Account Name (optional)</label>
-          <input id="pm-account-name" type="text" placeholder="e.g. Merch Vendor Ltd" />
-        </div>
-        <div class="form-group">
-          <label>Bank Name (optional)</label>
-          <input id="pm-bank-name" type="text" placeholder="e.g. KCB Bank" />
-        </div>
-      </div>
-
-      <div class="form-row" style="margin-top:1rem;">
-        <div class="form-group">
-          <label>Account Number (optional)</label>
-          <input id="pm-account-number" type="text" placeholder="e.g. 0123456789" />
-        </div>
-        <div class="form-group">
-          <label>Email (optional)</label>
-          <input id="pm-email" type="email" placeholder="e.g. vendor@example.com" />
-        </div>
-      </div>
-
-      <div class="form-group" style="margin-top:1rem;">
-        <label>Delivery / Payment Instructions (optional)</label>
-        <textarea id="pm-instructions"
-          placeholder="e.g. Send M-Pesa confirmation to WhatsApp after payment"
-          style="width:100%;padding:.85rem 1.1rem;border:1px solid var(--border-brand);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'DM Sans',sans-serif;min-height:80px;resize:vertical;"></textarea>
-      </div>
-
-      <div class="mini-note" style="margin-top:1.2rem;color:var(--text-secondary);font-size:.9rem;">
-        These details are shown to customers on the Wishlist page when they request an order.
-      </div>
-    </div>
   </section>
 
   <!-- Customers -->

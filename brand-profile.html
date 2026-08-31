@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brand Profile — MerchMarket</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="merchmarket.css">
+  <style>
+    body { padding-top: 0; }
+    .brand-profile-page {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    .brand-profile-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #FFD8B5, #c47d2e);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 1.8rem;
+    }
+    .panel {
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(170,111,2,.3);
+      border-radius: 16px;
+      padding: 1.8rem;
+      margin-bottom: 1.8rem;
+    }
+    .section-heading {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #ffd8b5;
+      margin-bottom: 1.2rem;
+    }
+    .field-row { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
+    @media (max-width:520px){ .field-row{ grid-template-columns:1fr; } }
+    .field-hint { color:#666; font-size:.78rem; margin-top:.35rem; }
+    .save-row { display:flex; gap:1rem; justify-content:flex-end; margin-top:1.6rem; flex-wrap:wrap; }
+    .save-row .btn { min-width: 160px; }
+    .mini-note { margin-top:1.2rem; color:var(--text-secondary); font-size:.9rem; }
+  </style>
+</head>
+<body class="admin-body">
+
+<nav class="admin-navbar">
+  <div class="logo" onclick="location.href='index.html'">
+    MerchMarket
+    <span style="font-size:.9rem;font-weight:400;opacity:.7;">Brand Admin</span>
+    <span id="brand-user-icon" style="margin-left:.6rem;font-size:0.95rem;opacity:.95;">🟣</span>
+  </div>
+  <ul class="admin-nav-links">
+    <li><a href="brandflow.html" style="color:#a0a0a0;font-size:.85rem;padding:1rem;">← Back to Dashboard</a></li>
+    <li><a href="#" data-auth-link="logout" style="color:#f44336;font-size:.85rem;padding:1rem;font-weight:600;">Sign Out</a></li>
+  </ul>
+</nav>
+
+<main class="brand-profile-page" style="padding-top:6rem;">
+  <div class="brand-profile-title">Brand Profile</div>
+
+  <div id="guardMsg" style="display:none;color:#a0a0a0;padding:3rem;text-align:center;">
+    Please <a href="login.html?type=brand" style="color:#c47d2e;font-weight:600;">log in as a brand</a> to manage your profile.
+  </div>
+
+  <div id="profileGrid" style="display:none;">
+
+    <!-- Brand Details -->
+    <div class="panel">
+      <div class="section-heading">Brand Details</div>
+      <form id="brandDetailsForm">
+        <div class="field-row">
+          <div class="form-group">
+            <label>Brand Name</label>
+            <input type="text" id="fieldBrandName" required>
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="fieldBrandEmail" disabled style="opacity:.6;cursor:not-allowed;">
+            <div class="field-hint">Contact support to change your email address.</div>
+          </div>
+        </div>
+        <div class="save-row">
+          <button type="submit" class="btn btn-primary" id="saveBrandDetailsBtn">Save Changes</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Payout Details -->
+    <div class="panel">
+      <div class="section-heading">Payout Details</div>
+      <div class="form-row" style="margin-bottom:1rem;">
+        <div class="form-group">
+          <label>Preferred Payment Method</label>
+          <select id="pm-method" style="width:100%;padding:.85rem 1.1rem;border:1px solid var(--border-brand);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'DM Sans',sans-serif;">
+            <option value="mpesa">M-Pesa</option>
+            <option value="bank">Bank Transfer</option>
+            <option value="paypal">PayPal</option>
+            <option value="cash">Cash on Delivery</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Display Label (for customers)</label>
+          <input id="pm-label" type="text" placeholder="e.g. Paybill/Shortcode" />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label id="pm-detail-label">M-Pesa Phone Number</label>
+        <input id="pm-detail" type="text" placeholder="e.g. 07xx xxx xxx or Paybill/Shortcode" />
+      </div>
+
+      <div class="form-row" style="margin-top:1rem;">
+        <div class="form-group">
+          <label>Account Name (optional)</label>
+          <input id="pm-account-name" type="text" placeholder="e.g. Merch Vendor Ltd" />
+        </div>
+        <div class="form-group">
+          <label>Bank Name (optional)</label>
+          <input id="pm-bank-name" type="text" placeholder="e.g. KCB Bank" />
+        </div>
+      </div>
+
+      <div class="form-row" style="margin-top:1rem;">
+        <div class="form-group">
+          <label>Account Number (optional)</label>
+          <input id="pm-account-number" type="text" placeholder="e.g. 0123456789" />
+        </div>
+        <div class="form-group">
+          <label>Email (optional)</label>
+          <input id="pm-email" type="email" placeholder="e.g. vendor@example.com" />
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-top:1rem;">
+        <label>Delivery / Payment Instructions (optional)</label>
+        <textarea id="pm-instructions"
+          placeholder="e.g. Send M-Pesa confirmation to WhatsApp after payment"
+          style="width:100%;padding:.85rem 1.1rem;border:1px solid var(--border-brand);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'DM Sans',sans-serif;min-height:80px;resize:vertical;"></textarea>
+      </div>
+
+      <div class="mini-note">
+        These details are shown to customers on the Wishlist page when they request an order.
+      </div>
+
+      <div class="save-row">
+        <button type="button" class="btn btn-primary" id="save-payment-details">Save Payout Details</button>
+      </div>
+    </div>
+
+    <!-- Change Password -->
+    <div class="panel">
+      <div class="section-heading">Change Password</div>
+      <form id="passwordForm">
+        <div class="field-row">
+          <div class="form-group">
+            <label>New Password</label>
+            <input type="password" id="fieldNewPassword" minlength="8" placeholder="Min 8 characters" autocomplete="new-password">
+          </div>
+          <div class="form-group">
+            <label>Confirm New Password</label>
+            <input type="password" id="fieldConfirmPassword" minlength="8" placeholder="Repeat password" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="save-row">
+          <button type="submit" class="btn btn-secondary" id="savePasswordBtn">Update Password</button>
+        </div>
+      </form>
+    </div>
+
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="merchmarket.js"></script>
+
+<script>
+  let _currentBrand = null;
+
+  /* ─── Payout details: same tab logic as brandflow-admin.js's payments tab,
+     hitting the same /api/brand/payments endpoint. ─── */
+
+  function wirePaymentMethodSwitcher() {
+    const methodEl    = document.getElementById('pm-method');
+    const detailLabel = document.getElementById('pm-detail-label');
+    const pmDetail    = document.getElementById('pm-detail');
+    if (!methodEl || !detailLabel) return;
+
+    const update = () => {
+      const m = methodEl.value;
+      if (m === 'mpesa') {
+        detailLabel.textContent = 'M-Pesa Phone / Paybill / Shortcode';
+        pmDetail.placeholder    = 'e.g. 07xx xxx xxx or Paybill number';
+      } else if (m === 'bank') {
+        detailLabel.textContent = 'Bank Account Number';
+        pmDetail.placeholder    = 'e.g. 0123456789';
+      } else if (m === 'paypal') {
+        detailLabel.textContent = 'PayPal Email';
+        pmDetail.placeholder    = 'e.g. vendor@paypal.com';
+      } else {
+        detailLabel.textContent = 'Cash Handling Instructions';
+        pmDetail.placeholder    = 'e.g. Pay cash to rider on delivery';
+      }
+    };
+
+    methodEl.removeEventListener('change', update);
+    methodEl.addEventListener('change', update);
+    update();
+  }
+
+  async function loadPaymentsSection() {
+    const res = await fetch('/api/brand/payments', { headers: await getAuthHeader() });
+    const payload = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      console.error('loadPaymentsSection error:', payload.error || res.statusText);
+      return;
+    }
+
+    const data = payload.payments;
+    if (!data) { wirePaymentMethodSwitcher(); return; }
+
+    const d = data.details || {};
+    document.getElementById('pm-method').value         = data.method   || 'mpesa';
+    document.getElementById('pm-label').value          = data.label    || '';
+    document.getElementById('pm-detail').value         = d.phone || d.accountNumber || d.email || '';
+    document.getElementById('pm-account-name').value   = d.accountName   || '';
+    document.getElementById('pm-bank-name').value      = d.bankName      || '';
+    document.getElementById('pm-account-number').value = d.accountNumber || '';
+    document.getElementById('pm-email').value          = d.email         || '';
+    document.getElementById('pm-instructions').value   = d.deliveryInstructions || '';
+
+    wirePaymentMethodSwitcher();
+  }
+
+  async function savePaymentDetails() {
+    const btn = document.getElementById('save-payment-details');
+    const method = document.getElementById('pm-method').value;
+    const label  = document.getElementById('pm-label').value.trim();
+    const phone  = document.getElementById('pm-detail').value.trim();
+
+    const details = {
+      phone:                phone,
+      accountName:          document.getElementById('pm-account-name').value.trim(),
+      bankName:             document.getElementById('pm-bank-name').value.trim(),
+      accountNumber:        document.getElementById('pm-account-number').value.trim(),
+      email:                document.getElementById('pm-email').value.trim(),
+      deliveryInstructions: document.getElementById('pm-instructions').value.trim()
+    };
+
+    Object.keys(details).forEach(k => { if (!details[k]) delete details[k]; });
+
+    btn.disabled = true;
+    const originalLabel = btn.textContent;
+    btn.textContent = 'Saving…';
+
+    const res = await fetch('/api/brand/payments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
+      body: JSON.stringify({ method, label, details })
+    });
+    const payload = await res.json().catch(() => ({}));
+
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+
+    if (!res.ok) {
+      showToast('Failed to save payout details: ' + (payload.error || res.statusText), 'error');
+      console.error('savePaymentDetails error:', payload.error || res.statusText);
+      return;
+    }
+
+    showToast('Payout details saved!', 'success');
+  }
+
+  document.getElementById('save-payment-details').addEventListener('click', savePaymentDetails);
+
+  /* ─── Brand Details ─── */
+
+  async function loadBrandDetails() {
+    document.getElementById('fieldBrandName').value  = _currentBrand.name || '';
+    document.getElementById('fieldBrandEmail').value = _currentBrand.email || '';
+  }
+
+  document.getElementById('brandDetailsForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn  = document.getElementById('saveBrandDetailsBtn');
+    const name = document.getElementById('fieldBrandName').value.trim();
+
+    if (!name) { showToast('Brand name cannot be empty.', 'error'); return; }
+
+    btn.disabled = true;
+    const originalLabel = btn.textContent;
+    btn.textContent = 'Saving…';
+
+    const { data, error } = await db
+      .from('profiles')
+      .update({ name, updated_at: new Date().toISOString() })
+      .eq('id', _currentBrand.id)
+      .select('id')
+      .maybeSingle();
+
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+
+    if (error) {
+      showToast('Failed to save: ' + error.message, 'error');
+      console.error('brand profile update error:', error.message);
+      return;
+    }
+    if (!data) {
+      showToast('Update did not apply — please refresh and try again.', 'error');
+      console.error('brand profile update affected 0 rows for id', _currentBrand.id);
+      return;
+    }
+
+    showToast('Brand details saved!', 'success');
+    clearProfileCache();
+    _currentBrand = await getCurrentUser();
+
+    // Keep the header icon tooltip and any other brand-name displays in sync
+    const iconEl = document.getElementById('brand-user-icon');
+    if (iconEl && _currentBrand?.name) {
+      iconEl.title = `Logged in as: ${_currentBrand.name}`;
+      iconEl.setAttribute('aria-label', `Logged in as ${_currentBrand.name}`);
+    }
+  });
+
+  /* ─── Change Password (same pattern as profile.html) ─── */
+
+  document.getElementById('passwordForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pw  = document.getElementById('fieldNewPassword').value;
+    const pw2 = document.getElementById('fieldConfirmPassword').value;
+
+    if (!pw || !pw2) { showToast('Please fill in both password fields.', 'error'); return; }
+    if (pw !== pw2)   { showToast('Passwords do not match.', 'error'); return; }
+    if (pw.length < 8) { showToast('Password must be at least 8 characters.', 'error'); return; }
+
+    const btn = document.getElementById('savePasswordBtn');
+    btn.disabled = true;
+    btn.textContent = 'Updating…';
+
+    const { error } = await db.auth.updateUser({ password: pw });
+
+    btn.disabled = false;
+    btn.textContent = 'Update Password';
+
+    if (error) {
+      showToast('Failed to update password: ' + error.message, 'error');
+      return;
+    }
+
+    document.getElementById('fieldNewPassword').value = '';
+    document.getElementById('fieldConfirmPassword').value = '';
+    showToast('Password updated successfully!', 'success');
+  });
+
+  /* ─── Page guard + boot ─── */
+
+  (async () => {
+    const navEl = document.querySelector('.admin-navbar');
+    const mainEl = document.querySelector('main.brand-profile-page');
+    if (navEl) navEl.style.display = 'none';
+    if (mainEl) mainEl.style.display = 'none';
+
+    try {
+      const brand = await getBrandUser();
+      if (!brand) {
+        document.getElementById('guardMsg').style.display = 'block';
+        if (navEl) navEl.style.display = '';
+        if (mainEl) mainEl.style.display = '';
+        setTimeout(() => { window.location.href = 'login.html?type=brand'; }, 900);
+        return;
+      }
+
+      _currentBrand = brand;
+
+      if (navEl) navEl.style.display = '';
+      if (mainEl) mainEl.style.display = '';
+
+      const iconEl = document.getElementById('brand-user-icon');
+      if (iconEl) {
+        iconEl.textContent = '✅';
+        iconEl.style.color  = '#2ecc71';
+        if (brand.name) {
+          iconEl.title = `Logged in as: ${brand.name}`;
+          iconEl.setAttribute('aria-label', `Logged in as ${brand.name}`);
+        }
+      }
+
+      document.getElementById('profileGrid').style.display = 'block';
+      await loadBrandDetails();
+      await loadPaymentsSection();
+    } catch (e) {
+      console.error('Brand profile guard error:', e);
+      window.location.href = 'login.html?type=brand';
+    }
+  })();
+</script>
+
+</body>
+</html>
