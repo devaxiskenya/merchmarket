@@ -825,24 +825,53 @@ app.get('/api/brand/inventory', requireAuth, requireBrand, async (req, res) => {
   }
 });
 
+function cleanVariants(rawVariants) {
+  if (!Array.isArray(rawVariants)) return null;
+  return rawVariants
+    .map(v => ({
+      size_label: String(v?.size_label ?? v?.size ?? '').trim(),
+      stock: Number.parseInt(v?.stock, 10)
+    }))
+    .filter(v => v.size_label && Number.isFinite(v.stock) && v.stock >= 0);
+}
+
 app.post('/api/brand/products', requireAuth, requireBrand, async (req, res) => {
   try {
+    const { variants: rawVariants, ...rest } = req.body;
+    const variants = cleanVariants(rawVariants);
+
     const payload = {
-      ...req.body,
+      ...rest,
       brand_id: req.brandProfile.id,
       seller: req.brandProfile.name,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+      created_at: new Date().toISOString()
     };
-    payload.created_at = new Date().toISOString();
 
-    const { data, error } = await req.supabase
+    const { data: inserted, error } = await req.supabase
       .from('products')
       .insert(payload)
       .select('*')
       .single();
 
     if (error) throw error;
-    res.json({ product: data });
+
+    if (variants && variants.length) {
+      const { error: variantError } = await req.supabase
+        .from('product_variants')
+        .insert(variants.map(v => ({ ...v, product_id: inserted.id })));
+      if (variantError) throw variantError;
+    }
+
+    // Re-fetch: the variant rollup trigger may have just updated stock/sizes
+    const { data: final, error: refetchError } = await req.supabase
+      .from('products')
+      .select('*')
+      .eq('id', inserted.id)
+      .single();
+    if (refetchError) throw refetchError;
+
+    res.json({ product: final });
   } catch (e) {
     res.status(500).json({ error: 'Failed to add product', details: e.message });
   }
@@ -850,23 +879,60 @@ app.post('/api/brand/products', requireAuth, requireBrand, async (req, res) => {
 
 app.put('/api/brand/products/:id', requireAuth, requireBrand, async (req, res) => {
   try {
+    const { variants: rawVariants, ...rest } = req.body;
+    const variants = cleanVariants(rawVariants); // null = field omitted entirely, [] = cleared
+
+    const manualStock = Number.parseInt(rest.stock, 10);
+
     const payload = {
-      ...req.body,
+      ...rest,
       brand_id: req.brandProfile.id,
       seller: req.brandProfile.name,
       updated_at: new Date().toISOString()
     };
 
-    const { data, error } = await req.supabase
+    const { error: updateError } = await req.supabase
       .from('products')
       .update(payload)
       .eq('id', req.params.id)
-      .eq('brand_id', req.brandProfile.id)
-      .select('*')
-      .single();
+      .eq('brand_id', req.brandProfile.id);
 
-    if (error) throw error;
-    res.json({ product: data });
+    if (updateError) throw updateError;
+
+    if (variants !== null) {
+      // Replace-all: simplest correct reconciliation, the rollup trigger
+      // recalculates products.stock/sizes after each variant-table write.
+      const { error: deleteError } = await req.supabase
+        .from('product_variants')
+        .delete()
+        .eq('product_id', req.params.id);
+      if (deleteError) throw deleteError;
+
+      if (variants.length) {
+        const { error: insertError } = await req.supabase
+          .from('product_variants')
+          .insert(variants.map(v => ({ ...v, product_id: req.params.id })));
+        if (insertError) throw insertError;
+      } else if (Number.isFinite(manualStock) && manualStock >= 0) {
+        // No sizes submitted — brand wants plain stock again.
+        // The trigger just zeroed products.stock (no variants left), restore it.
+        const { error: fallbackError } = await req.supabase
+          .from('products')
+          .update({ stock: manualStock })
+          .eq('id', req.params.id)
+          .eq('brand_id', req.brandProfile.id);
+        if (fallbackError) throw fallbackError;
+      }
+    }
+
+    const { data: final, error: refetchError } = await req.supabase
+      .from('products')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+    if (refetchError) throw refetchError;
+
+    res.json({ product: final });
   } catch (e) {
     res.status(500).json({ error: 'Failed to update product', details: e.message });
   }

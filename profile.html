@@ -148,6 +148,66 @@
     .save-row .btn { min-width: 160px; }
 
     .field-hint { color:#666; font-size:.78rem; margin-top:.35rem; }
+
+    /* ── Sizing & Fit ── */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(170,111,2,.2);
+      border-radius: 12px;
+      padding: 1rem 1.2rem;
+      margin-bottom: 1.4rem;
+    }
+    .toggle-row .toggle-label { font-weight: 700; color: #ffd8b5; }
+    .toggle-row .toggle-sub { color: var(--text-secondary); font-size: .82rem; margin-top: .2rem; }
+    .switch { position: relative; display: inline-block; width: 46px; height: 26px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch-track {
+      position: absolute; cursor: pointer; inset: 0;
+      background: rgba(255,255,255,.15);
+      border-radius: 999px;
+      transition: background .2s;
+    }
+    .switch-track::before {
+      content: '';
+      position: absolute; left: 3px; bottom: 3px;
+      width: 20px; height: 20px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform .2s;
+    }
+    .switch input:checked + .switch-track { background: var(--accent); }
+    .switch input:checked + .switch-track::before { transform: translateX(20px); }
+
+    .sizes-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.4rem; }
+    .sizes-grid label { display: block; color: var(--text-secondary); margin-bottom: .45rem; font-weight: 500; font-size: .88rem; text-transform: capitalize; }
+    .sizes-grid select {
+      width: 100%;
+      padding: .75rem .9rem;
+      border: 1px solid var(--border-brand);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.05);
+      color: var(--text-primary);
+      font-family: 'DM Sans', sans-serif;
+      font-size: .9rem;
+    }
+    .sizes-grid select option { background: #1e1e1e; }
+
+    .measure-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1rem; }
+    .measure-grid label { display: block; color: var(--text-secondary); margin-bottom: .4rem; font-size: .82rem; }
+    .measure-grid input {
+      width: 100%;
+      padding: .65rem .8rem;
+      border: 1px solid var(--border-brand);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.05);
+      color: var(--text-primary);
+      font-family: 'DM Sans', sans-serif;
+      font-size: .88rem;
+    }
   </style>
 </head>
 <body class="body">
@@ -238,6 +298,39 @@
 
         <hr class="divider-line">
 
+        <div class="section-heading">Sizing &amp; Fit</div>
+        <form id="sizingForm">
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Adaptive Sizing</div>
+              <div class="toggle-sub">Marketplace shows your size (and the next 3 sizes up) first. Turn off if you're shopping for someone else.</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="fieldAdaptiveSizing" checked>
+              <span class="switch-track"></span>
+            </label>
+          </div>
+
+          <div class="sizes-grid" id="sizesGrid"><!-- populated by JS --></div>
+
+          <div class="field-hint" style="margin-bottom:.6rem;">Body measurements (optional) — used for finer fit guidance on product pages.</div>
+          <div class="measure-grid">
+            <div><label>Height (cm)</label><input type="number" min="0" id="mHeight"></div>
+            <div><label>Weight (kg)</label><input type="number" min="0" id="mWeight"></div>
+            <div><label>Chest (cm)</label><input type="number" min="0" id="mChest"></div>
+            <div><label>Waist (cm)</label><input type="number" min="0" id="mWaist"></div>
+            <div><label>Hip (cm)</label><input type="number" min="0" id="mHip"></div>
+            <div><label>Inseam (cm)</label><input type="number" min="0" id="mInseam"></div>
+            <div><label>Shoulder (cm)</label><input type="number" min="0" id="mShoulder"></div>
+          </div>
+
+          <div class="save-row">
+            <button type="submit" class="btn btn-primary" id="saveSizingBtn">Save Sizing</button>
+          </div>
+        </form>
+
+        <hr class="divider-line">
+
         <div class="section-heading">Change Password</div>
         <form id="passwordForm">
           <div class="field-row">
@@ -265,6 +358,31 @@
   <script>
     let _currentProfile = null;
     let _pendingAvatarDataUrl = null;
+
+    // Canonical size scale per category — used here for the dropdown order,
+    // and will be reused by the marketplace for "next 3 sizes up" matching.
+    const SIZE_SCALES = {
+      torso:  ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'],
+      trunks: ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'],
+      innies: ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'],
+      shoes:  ['UK5', 'UK6', 'UK7', 'UK8', 'UK9', 'UK10', 'UK11', 'UK12'],
+      socks:  ['One Size']
+    };
+
+    function renderSizesGrid(savedSizes) {
+      const grid = document.getElementById('sizesGrid');
+      grid.innerHTML = Object.entries(SIZE_SCALES).map(([category, scale]) => {
+        const current = savedSizes[category] || '';
+        const options = ['<option value="">Not set</option>']
+          .concat(scale.map(s => `<option value="${s}" ${s === current ? 'selected' : ''}>${s}</option>`))
+          .join('');
+        return `
+          <div>
+            <label for="size-${category}">${category}</label>
+            <select id="size-${category}" data-category="${category}">${options}</select>
+          </div>`;
+      }).join('');
+    }
 
     function initials(name) {
       if (!name) return '?';
@@ -308,6 +426,31 @@
 
       document.getElementById('pointsValue').textContent = (user.points ?? 0).toLocaleString();
       await loadBadges(user.id, user.completed_purchases ?? 0);
+      await loadSizing(user);
+    }
+
+    async function loadSizing(user) {
+      document.getElementById('fieldAdaptiveSizing').checked = user.adaptive_sizing_enabled !== false;
+
+      const { data: sizeRows, error } = await db
+        .from('member_sizes')
+        .select('category, size_label')
+        .eq('user_id', user.id);
+
+      if (error) console.error('load member_sizes error:', error.message);
+
+      const savedSizes = {};
+      (sizeRows || []).forEach(r => { savedSizes[r.category] = r.size_label; });
+      renderSizesGrid(savedSizes);
+
+      const bp = user.body_profile || {};
+      document.getElementById('mHeight').value   = bp.height_cm ?? '';
+      document.getElementById('mWeight').value   = bp.weight_kg ?? '';
+      document.getElementById('mChest').value    = bp.chest_cm ?? '';
+      document.getElementById('mWaist').value    = bp.waist_cm ?? '';
+      document.getElementById('mHip').value      = bp.hip_cm ?? '';
+      document.getElementById('mInseam').value   = bp.inseam_cm ?? '';
+      document.getElementById('mShoulder').value = bp.shoulder_cm ?? '';
     }
 
     async function loadBadges(userId, completedPurchases) {
@@ -425,6 +568,79 @@
       clearProfileCache();
       _currentProfile = await getCurrentUser();
       document.getElementById('memberNameDisplay').textContent = _currentProfile.name || 'Member';
+    });
+
+    // ── Save sizing ──
+    document.getElementById('sizingForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('saveSizingBtn');
+      btn.disabled = true;
+      const originalLabel = btn.textContent;
+      btn.textContent = 'Saving…';
+
+      try {
+        const adaptiveSizingEnabled = document.getElementById('fieldAdaptiveSizing').checked;
+
+        const numOrNull = id => {
+          const v = document.getElementById(id).value;
+          return v === '' ? null : Number(v);
+        };
+        const bodyProfile = {
+          height_cm:   numOrNull('mHeight'),
+          weight_kg:   numOrNull('mWeight'),
+          chest_cm:    numOrNull('mChest'),
+          waist_cm:    numOrNull('mWaist'),
+          hip_cm:      numOrNull('mHip'),
+          inseam_cm:   numOrNull('mInseam'),
+          shoulder_cm: numOrNull('mShoulder'),
+          updated_at:  new Date().toISOString()
+        };
+
+        const { error: profileError } = await db
+          .from('profiles')
+          .update({
+            adaptive_sizing_enabled: adaptiveSizingEnabled,
+            body_profile: bodyProfile,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', _currentProfile.id);
+        if (profileError) throw profileError;
+
+        // One upsert per category with a selection; delete rows the member cleared.
+        const selects = document.querySelectorAll('#sizesGrid select');
+        const toUpsert = [];
+        const toClear = [];
+        selects.forEach(sel => {
+          const category = sel.dataset.category;
+          if (sel.value) toUpsert.push({ user_id: _currentProfile.id, category, size_label: sel.value, updated_at: new Date().toISOString() });
+          else toClear.push(category);
+        });
+
+        if (toUpsert.length) {
+          const { error: upsertError } = await db
+            .from('member_sizes')
+            .upsert(toUpsert, { onConflict: 'user_id,category' });
+          if (upsertError) throw upsertError;
+        }
+        if (toClear.length) {
+          const { error: clearError } = await db
+            .from('member_sizes')
+            .delete()
+            .eq('user_id', _currentProfile.id)
+            .in('category', toClear);
+          if (clearError) throw clearError;
+        }
+
+        showToast('Sizing saved!', 'success');
+        clearProfileCache();
+        _currentProfile = await getCurrentUser();
+      } catch (err) {
+        showToast('Failed to save sizing: ' + (err?.message || 'Unknown error'), 'error');
+        console.error('sizing save error:', err);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+      }
     });
 
     // ── Change password ──

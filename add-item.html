@@ -127,6 +127,36 @@
 
     .field-hint { color: var(--text-muted, #666); font-size: .82rem; margin-top: .55rem; line-height: 1.45; }
 
+    /* Variant (size + stock) rows */
+    .variant-row {
+      display: grid;
+      grid-template-columns: 1fr 110px 36px;
+      gap: .6rem;
+      align-items: center;
+      margin-bottom: .6rem;
+    }
+    .variant-row input {
+      width: 100%;
+      padding: .7rem .9rem;
+      border: 1px solid var(--border-brand);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.05);
+      color: var(--text-primary);
+      font-family: 'DM Sans', sans-serif;
+      font-size: .9rem;
+    }
+    .variant-row input:focus { outline: none; border-color: var(--accent); }
+    .variant-rm-btn {
+      width: 36px; height: 36px;
+      border: none;
+      border-radius: 8px;
+      background: #f44336;
+      color: #fff;
+      font-size: 15px;
+      cursor: pointer;
+      line-height: 1;
+    }
+
     @media (max-width: 860px) {
       .admin-form-layout { grid-template-columns: 1fr; }
       .item-panel { padding: 1.5rem 1.2rem; }
@@ -224,13 +254,10 @@
             </div>
 
             <div class="form-group">
-              <label>Item Sizes</label>
-              <input
-                type="text"
-                id="item-sizes"
-                placeholder="e.g. XS, S, M, L or 32, 34, 36"
-              >
-              <div class="field-hint">Comma-separated. Saved to the product's Sizes field.</div>
+              <label>Sizes &amp; Stock (optional)</label>
+              <div id="variant-rows"></div>
+              <button type="button" id="btn-add-variant" class="btn btn-secondary" style="margin-top:.6rem;padding:.55rem 1.1rem;font-size:.85rem;">+ Add Size</button>
+              <div class="field-hint">Add a row per size with its own stock count. Leave empty to use the plain Stock field above instead — adding any size row here will make it the source of truth and the Stock field will be recalculated automatically.</div>
             </div>
           </div>
         </section>
@@ -273,6 +300,37 @@
   let currentImages = [];
   let editingId = null;
   let currentBrand = null;
+  let variantRows = []; // [{ size_label, stock }]
+
+  function renderVariantRows() {
+    const container = document.getElementById('variant-rows');
+    container.innerHTML = variantRows.map((v, idx) => `
+      <div class="variant-row">
+        <input type="text" placeholder="Size (e.g. M, UK9)" value="${escapeAttribute(v.size_label)}" data-idx="${idx}" data-field="size_label">
+        <input type="number" min="0" step="1" placeholder="Stock" value="${v.stock ?? ''}" data-idx="${idx}" data-field="stock">
+        <button type="button" class="variant-rm-btn" data-idx="${idx}" title="Remove">×</button>
+      </div>`).join('');
+
+    container.querySelectorAll('input').forEach(input => {
+      input.addEventListener('input', () => {
+        const idx = parseInt(input.dataset.idx);
+        const field = input.dataset.field;
+        variantRows[idx][field] = field === 'stock' ? input.value : input.value;
+      });
+    });
+
+    container.querySelectorAll('.variant-rm-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        variantRows.splice(parseInt(btn.dataset.idx), 1);
+        renderVariantRows();
+      });
+    });
+  }
+
+  document.getElementById('btn-add-variant').addEventListener('click', () => {
+    variantRows.push({ size_label: '', stock: '' });
+    renderVariantRows();
+  });
 
   function renderPreviews() {
     const list = document.getElementById('image-preview-list');
@@ -407,10 +465,23 @@
     document.getElementById('item-type').value          = data.item_type || 'torso';
     document.getElementById('item-condition').value     = data.condition || 'new';
     document.getElementById('item-tags').value          = Array.isArray(data.tags) ? data.tags.join(', ') : '';
-    document.getElementById('item-sizes').value          = Array.isArray(data.sizes) ? data.sizes.join(', ') : '';
 
     currentImages = coerceImagesFromDb(data.images);
     renderPreviews();
+
+    // Variants are public-readable, so a direct client select is fine here.
+    const { data: variants, error: variantError } = await db
+      .from('product_variants')
+      .select('size_label, stock')
+      .eq('product_id', editingId)
+      .order('size_label', { ascending: true });
+
+    if (variantError) {
+      console.error('load variants error:', variantError.message);
+    } else if (variants && variants.length) {
+      variantRows = variants.map(v => ({ size_label: v.size_label, stock: String(v.stock) }));
+      renderVariantRows();
+    }
   }
 
 
@@ -434,13 +505,23 @@
     const tags = document.getElementById('item-tags').value
       .split(',').map(t => t.trim()).filter(Boolean);
 
-    // Placeholder item sizes: persist as an array (CSV) when provided.
-    // Until you add a real UI for sizes, we accept comma-separated values.
-    const sizes = (document.getElementById('item-sizes')?.value || '')
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean);
+    // Build the variants array from the size+stock rows, if any were added.
+    // Rows with an empty size label are ignored; a size label with a blank
+    // stock field is a validation error (ambiguous — did they mean 0?).
+    const filledRows = variantRows.filter(v => v.size_label.trim());
+    const seenLabels = new Set();
+    let variantError = null;
 
+    const variants = filledRows.map(v => {
+      const label = v.size_label.trim();
+      const stockVal = Number.parseInt(v.stock, 10);
+      if (seenLabels.has(label.toLowerCase())) variantError = `Duplicate size "${label}".`;
+      seenLabels.add(label.toLowerCase());
+      if (!Number.isFinite(stockVal) || stockVal < 0) variantError = `Enter a valid stock number for size "${label}".`;
+      return { size_label: label, stock: stockVal };
+    });
+
+    if (variantError) { showToast(variantError, 'error'); return; }
 
     if (!name || !sku) { showToast('Name and SKU are required', 'error'); return; }
     if (!Number.isFinite(stock) || stock < 0) { showToast('Stock must be 0 or greater', 'error'); return; }
@@ -450,9 +531,12 @@
       brand_id: brand.id,
       name, sku, stock, price,
       seller: brand.name,
-      wear_category, item_type, condition, tags, sizes,
+      wear_category, item_type, condition, tags,
       images: normalizeImagesForDb(currentImages),
-
+      // Always send `variants` (possibly []) on edit so the server can tell
+      // "no sizes rows at all" apart from "brand cleared existing sizes".
+      // On create, omitting it entirely when empty keeps simple-stock items simple.
+      ...(editingId ? { variants } : (variants.length ? { variants } : {})),
       updated_at: new Date().toISOString()
     };
 
