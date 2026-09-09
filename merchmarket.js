@@ -704,6 +704,7 @@ function normalizeProduct(row) {
     stock,
     badge: stock === 0 ? 'Out of Stock' : (row.badge || ''),
     sku: row.sku || '',
+    sizesOffered: Array.isArray(row.sizes) ? row.sizes : [],
     createdAt: row.created_at || new Date().toISOString()
   };
 }
@@ -722,6 +723,87 @@ async function fetchAllProducts() {
   }
 
   return data.map(normalizeProduct);
+}
+
+/* ─── ADAPTIVE SIZING ──────────────────────────────────────── */
+// Canonical size scale per item-type category — mirrors the scale used in
+// profile.html's Sizing & Fit panel so "next 3 sizes up" means the same
+// thing in both places. products.sizes (kept in sync with product_variants
+// by the sync_product_variant_rollup trigger) holds the labels each
+// product currently offers.
+
+const SIZE_SCALES = {
+  torso:  ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'],
+  trunks: ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'],
+  innies: ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'],
+  shoes:  ['UK5', 'UK6', 'UK7', 'UK8', 'UK9', 'UK10', 'UK11', 'UK12'],
+  socks:  ['One Size']
+};
+
+let adaptiveSizingActive = false;
+let memberSizesByCategory = {};
+
+// Fetches the current member's saved sizes and adaptive-sizing preference.
+// Adaptive mode is only "active" when the person is a logged-in member,
+// hasn't turned the toggle off, and has saved at least one size — everyone
+// else (guests, brands, or members with no sizes saved) gets the random
+// fallback so people shopping for someone else aren't boxed in.
+async function loadAdaptiveSizingState() {
+  adaptiveSizingActive = false;
+  memberSizesByCategory = {};
+
+  const user = await getCurrentUser();
+  if (!user || user.type !== 'member' || user.adaptive_sizing_enabled === false) return;
+
+  const { data, error } = await db
+    .from('member_sizes')
+    .select('category, size_label')
+    .eq('user_id', user.id);
+
+  if (error) { console.error('loadAdaptiveSizingState error:', error.message); return; }
+
+  (data || []).forEach(row => { memberSizesByCategory[row.category] = row.size_label; });
+  adaptiveSizingActive = Object.keys(memberSizesByCategory).length > 0;
+}
+
+// Fisher–Yates, in place — used for the "adaptive sizing off" fallback so
+// browsing shows a healthy mix of brands/items rather than always the
+// same chronological order.
+function shuffleInPlace(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+// Returns { visible, rank } for a product given the member's saved sizes.
+// rank 0 = exact size match, 1-3 = that many sizes up from their size.
+// Products with no size data yet (brand hasn't added variants), or whose
+// category has no saved member size, stay visible at a neutral rank rather
+// than disappearing from the catalog.
+function computeAdaptiveMatch(product) {
+  const category = normalizeLower(product.itemType);
+  const scale = SIZE_SCALES[category];
+  const memberSize = scale ? memberSizesByCategory[category] : null;
+
+  if (!scale || !memberSize) return { visible: true, rank: 50 };
+
+  const memberIdx = scale.indexOf(memberSize);
+  const offered = Array.isArray(product.sizesOffered) ? product.sizesOffered : [];
+
+  if (memberIdx === -1 || !offered.length) return { visible: true, rank: 40 };
+
+  let bestRank = null;
+  offered.forEach(label => {
+    const idx = scale.indexOf(label);
+    if (idx === -1) return;
+    const diff = idx - memberIdx;
+    if (diff >= 0 && diff <= 3 && (bestRank === null || diff < bestRank)) bestRank = diff;
+  });
+
+  if (bestRank === null) return { visible: false, rank: null };
+  return { visible: true, rank: bestRank };
 }
 
 /* ─── MARKETPLACE ──────────────────────────────────────────── */
@@ -771,7 +853,7 @@ function normalizeLower(s) { return (s || '').toString().trim().toLowerCase(); }
 
 function applyFilters() {
   const q = searchQuery;
-  return currentProducts.filter(product => {
+  let filtered = currentProducts.filter(product => {
     const wear = normalizeLower(product.wearCategory);
     const item = normalizeLower(product.itemType);
 
@@ -782,6 +864,16 @@ function applyFilters() {
     return normalizeLower(product.name).includes(q)
         || normalizeLower(product.seller).includes(q);
   });
+
+  if (adaptiveSizingActive) {
+    filtered = filtered
+      .map(product => ({ product, match: computeAdaptiveMatch(product) }))
+      .filter(entry => entry.match.visible)
+      .sort((a, b) => a.match.rank - b.match.rank)
+      .map(entry => entry.product);
+  }
+
+  return filtered;
 }
 
 async function initMarketplace() {
@@ -794,6 +886,9 @@ async function initMarketplace() {
   currentProducts = products;
 
   console.log('Total available products:', currentProducts.length);
+
+  await loadAdaptiveSizingState();
+  if (!adaptiveSizingActive) shuffleInPlace(currentProducts);
 
   activeWearCategory = 'all';
   activeItemType     = 'all';
@@ -827,7 +922,11 @@ function renderProductGrid(products) {
   }
 
   const resultsEl = document.querySelector('.results-count');
-  if (resultsEl) resultsEl.innerHTML = `Showing <strong>${products.length}</strong> results`;
+  if (resultsEl) {
+    resultsEl.innerHTML = adaptiveSizingActive
+      ? `Showing <strong>${products.length}</strong> results — sized for you`
+      : `Showing <strong>${products.length}</strong> results`;
+  }
 
   grid.innerHTML = products.map(p => {
     const stockBadge  = p.stock < 5 ? `<div class="product-badge">${p.stock} left</div>` : '';

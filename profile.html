@@ -359,15 +359,10 @@
     let _currentProfile = null;
     let _pendingAvatarDataUrl = null;
 
-    // Canonical size scale per category — used here for the dropdown order,
-    // and will be reused by the marketplace for "next 3 sizes up" matching.
-    const SIZE_SCALES = {
-      torso:  ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'],
-      trunks: ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'],
-      innies: ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'],
-      shoes:  ['UK5', 'UK6', 'UK7', 'UK8', 'UK9', 'UK10', 'UK11', 'UK12'],
-      socks:  ['One Size']
-    };
+    // SIZE_SCALES is now defined once in merchmarket.js (shared top-level
+    // scope across all classic <script> tags on the page) so the dropdown
+    // order here and the marketplace's "next 3 sizes up" matching can
+    // never drift apart.
 
     function renderSizesGrid(savedSizes) {
       const grid = document.getElementById('sizesGrid');
