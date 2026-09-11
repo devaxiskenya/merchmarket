@@ -825,6 +825,37 @@ app.get('/api/brand/inventory', requireAuth, requireBrand, async (req, res) => {
   }
 });
 
+// Garment measurement field names the add-item.html variant editor can
+// send, per item type. Kept as one flat whitelist here (rather than
+// duplicating the per-category mapping) — a field being technically valid
+// for a category it wasn't shown for is harmless, the UI is what enforces
+// which fields make sense per type.
+const GARMENT_FIELD_WHITELIST = new Set([
+  'chest_cm', 'shoulder_cm', 'length_cm', 'waist_cm', 'hip_cm', 'inseam_cm'
+]);
+
+// Validates the size_specs array sent from add-item.html: array of
+// { size_label, garment: { <whitelisted_key>: cm } }. Drops any entry with
+// no label or no valid garment measurements. Returns null (not []) when
+// the input isn't an array at all, so callers can distinguish "field not
+// sent, leave existing data alone" from "sent as an empty array, clear it".
+function cleanSizeSpecs(rawSizeSpecs) {
+  if (!Array.isArray(rawSizeSpecs)) return null;
+  return rawSizeSpecs
+    .map(entry => {
+      const size_label = String(entry?.size_label ?? '').trim();
+      const garmentRaw = entry?.garment && typeof entry.garment === 'object' ? entry.garment : {};
+      const garment = {};
+      Object.entries(garmentRaw).forEach(([key, val]) => {
+        if (!GARMENT_FIELD_WHITELIST.has(key)) return;
+        const num = Number.parseFloat(val);
+        if (Number.isFinite(num) && num > 0 && num < 300) garment[key] = num;
+      });
+      return size_label && Object.keys(garment).length ? { size_label, garment } : null;
+    })
+    .filter(Boolean);
+}
+
 function cleanVariants(rawVariants) {
   if (!Array.isArray(rawVariants)) return null;
   return rawVariants
@@ -837,11 +868,13 @@ function cleanVariants(rawVariants) {
 
 app.post('/api/brand/products', requireAuth, requireBrand, async (req, res) => {
   try {
-    const { variants: rawVariants, ...rest } = req.body;
+    const { variants: rawVariants, size_specs: rawSizeSpecs, ...rest } = req.body;
     const variants = cleanVariants(rawVariants);
+    const sizeSpecs = cleanSizeSpecs(rawSizeSpecs); // null = not sent, don't set the column
 
     const payload = {
       ...rest,
+      ...(sizeSpecs !== null ? { size_specs: sizeSpecs } : {}),
       brand_id: req.brandProfile.id,
       seller: req.brandProfile.name,
       updated_at: new Date().toISOString(),
@@ -879,13 +912,15 @@ app.post('/api/brand/products', requireAuth, requireBrand, async (req, res) => {
 
 app.put('/api/brand/products/:id', requireAuth, requireBrand, async (req, res) => {
   try {
-    const { variants: rawVariants, ...rest } = req.body;
+    const { variants: rawVariants, size_specs: rawSizeSpecs, ...rest } = req.body;
     const variants = cleanVariants(rawVariants); // null = field omitted entirely, [] = cleared
+    const sizeSpecs = cleanSizeSpecs(rawSizeSpecs); // same null/[] distinction
 
     const manualStock = Number.parseInt(rest.stock, 10);
 
     const payload = {
       ...rest,
+      ...(sizeSpecs !== null ? { size_specs: sizeSpecs } : {}),
       brand_id: req.brandProfile.id,
       seller: req.brandProfile.name,
       updated_at: new Date().toISOString()
