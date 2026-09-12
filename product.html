@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Product — MerchMarket</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="merchmarket.css">
+  <style>
+    body { padding-top: 0; }
+    .product-page { max-width: 1100px; margin: 5.5rem auto 3rem; padding: 0 2rem; }
+    .back-link { display:inline-flex; align-items:center; gap:.4rem; color:#a0a0a0; font-size:.88rem; margin-bottom:1.5rem; text-decoration:none; }
+    .back-link:hover { color:#ffd8b5; }
+
+    .product-layout { display:grid; grid-template-columns: 1fr 1fr; gap:2.5rem; align-items:start; }
+    @media (max-width: 860px) { .product-layout { grid-template-columns: 1fr; } }
+
+    /* Gallery */
+    .pd-gallery {
+      position:relative; border-radius:16px; overflow:hidden;
+      background: rgba(255,255,255,.04); aspect-ratio:1;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .pd-gallery img { width:100%; height:100%; object-fit:cover; display:block; }
+    .pd-thumbs { display:flex; gap:.6rem; margin-top:.8rem; flex-wrap:wrap; }
+    .pd-thumb {
+      width:64px; height:64px; border-radius:8px; overflow:hidden;
+      border:2px solid transparent; cursor:pointer; opacity:.7; transition:all .2s; background:none; padding:0;
+    }
+    .pd-thumb.active { border-color:#c47d2e; opacity:1; }
+    .pd-thumb img { width:100%; height:100%; object-fit:cover; }
+
+    /* Info panel */
+    .pd-seller { color:#a0a0a0; font-size:.9rem; margin-bottom:.4rem; }
+    .pd-title { font-family:'Syne',sans-serif; font-size:1.9rem; font-weight:800; color:#fff; margin-bottom:.6rem; line-height:1.25; }
+    .pd-price { font-family:'Syne',sans-serif; font-size:2rem; font-weight:800; color:#ffd8b5; margin-bottom:1rem; }
+    .pd-meta { display:flex; gap:.6rem; flex-wrap:wrap; margin-bottom:1.2rem; }
+    .pd-meta span {
+      background:rgba(255,255,255,.05); border:1px solid rgba(170,111,2,.25); color:#a0a0a0;
+      padding:.3rem .8rem; border-radius:100px; font-size:.78rem; text-transform:capitalize;
+    }
+
+    .pd-section-title { font-family:'Syne',sans-serif; font-size:1rem; font-weight:700; color:#ffd8b5; margin: 1.4rem 0 .7rem; }
+
+    .pd-sizes { display:flex; gap:.6rem; flex-wrap:wrap; }
+    .pd-size-btn {
+      padding:.6rem 1.1rem; border-radius:10px; border:2px solid rgba(170,111,2,.35);
+      background:rgba(255,255,255,.04); color:#fff; font-weight:600; cursor:pointer; transition:all .2s;
+      font-family:'DM Sans',sans-serif; font-size:.9rem;
+    }
+    .pd-size-btn:hover:not(:disabled) { border-color:#c47d2e; }
+    .pd-size-btn.active { background:var(--gradient-brand); color:#0a0a0a; border-color:transparent; }
+    .pd-size-btn:disabled { opacity:.35; cursor:not-allowed; text-decoration:line-through; }
+    .pd-size-hint { color:#a0a0a0; font-size:.82rem; margin-top:.6rem; min-height:1.2rem; }
+
+    .pd-actions { display:flex; gap:1rem; margin-top:1.6rem; flex-wrap:wrap; }
+    .pd-actions .btn { flex:1; min-width:160px; }
+
+    .pd-guide-table { width:100%; border-collapse:collapse; margin-top:.5rem; }
+    .pd-guide-table th, .pd-guide-table td { padding:.6rem .8rem; text-align:left; border-bottom:1px solid rgba(255,255,255,.07); font-size:.85rem; }
+    .pd-guide-table th { color:#ffd8b5; font-weight:700; text-transform:uppercase; font-size:.72rem; letter-spacing:.05em; }
+    .pd-guide-table td { color:#ddd; }
+    .pd-guide-note { color:#666; font-size:.78rem; margin-top:.6rem; line-height:1.5; }
+
+    .pd-empty, .pd-loading { text-align:center; padding:5rem 2rem; color:#a0a0a0; }
+  </style>
+</head>
+<body class="body">
+
+  <nav>
+    <div class="logo" onclick="location.href='index.html'">MerchMarket</div>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="marketplace.html">Marketplace</a>
+      <a href="wishlist.html">♡ Wishlist</a>
+      <a href="orders.html">My Orders</a>
+      <a href="profile.html" data-auth-link="member" style="display:none;">👤 Account</a>
+      <a href="login.html" class="btn btn-primary" style="font-size:.85rem;padding:.55rem 1.1rem;" data-auth-link="login">Log In</a>
+      <a href="#" class="btn btn-primary" style="font-size:.85rem;padding:.55rem 1.1rem;display:none;" data-auth-link="logout">Sign Out</a>
+    </div>
+  </nav>
+
+  <div class="product-page">
+    <a href="marketplace.html" class="back-link">← Back to Marketplace</a>
+
+    <div id="pdLoading" class="pd-loading">Loading product…</div>
+    <div id="pdEmpty" class="pd-empty" style="display:none;">
+      <div style="font-size:3rem;margin-bottom:1rem;">🔍</div>
+      <p>Product not found. <a href="marketplace.html" style="color:#c47d2e;">Back to Marketplace</a></p>
+    </div>
+
+    <div id="pdContent" class="product-layout" style="display:none;">
+      <div>
+        <div class="pd-gallery">
+          <img id="pdMainImage" src="" alt="">
+        </div>
+        <div id="pdThumbs" class="pd-thumbs"></div>
+      </div>
+
+      <div>
+        <div class="pd-seller" id="pdSeller"></div>
+        <h1 class="pd-title" id="pdName"></h1>
+        <div class="pd-price" id="pdPrice"></div>
+        <div class="pd-meta" id="pdMeta"></div>
+
+        <div id="pdSizeSection" style="display:none;">
+          <div class="pd-section-title">Select Size</div>
+          <div class="pd-sizes" id="pdSizes"></div>
+          <div class="pd-size-hint" id="pdSizeHint"></div>
+          <div class="pd-guide-note">Size selection confirms availability. Cart/wishlist size tracking is coming soon — for now, contact the seller to confirm size on pickup.</div>
+        </div>
+
+        <div class="pd-actions">
+          <button class="btn btn-primary" id="pdAddCartBtn">Add to Cart</button>
+          <button class="btn btn-secondary" id="pdWishlistBtn">♡ Wishlist</button>
+        </div>
+
+        <div id="pdGuideSection" style="display:none;">
+          <div class="pd-section-title">Size Guide</div>
+          <table class="pd-guide-table">
+            <thead><tr id="pdGuideHead"></tr></thead>
+            <tbody id="pdGuideBody"></tbody>
+          </table>
+          <div class="pd-guide-note">Garment measurements as provided by the brand. Personalized fit guidance based on your saved measurements is coming soon.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="merchmarket.js"></script>
+
+  <script>
+    /* ============================================================
+       PRODUCT DETAIL PAGE — Phase 4b
+       Add to Cart / Wishlist use the real addProductToCartById() and
+       new toggleWishlistById() helpers from merchmarket.js (both key
+       off `currentProducts`, populated below with this one product).
+
+       KNOWN LIMITATION: cart_items/wishlists have no `size` column yet
+       (confirmed by reading server.js's /api/member/cart and
+       /api/member/wishlist routes — neither reads/writes size, and the
+       Supabase migration to add it couldn't be applied this session
+       because of a DB connectivity outage). Size selection here is
+       real and enforced (checks actual per-size stock from
+       product_variants) but is NOT yet persisted to the cart/wishlist
+       row — that needs a follow-up migration + route update once
+       Supabase access is confirmed working again.
+    ============================================================ */
+
+    const GARMENT_FIELD_LABELS = {
+      chest_cm: 'Chest', shoulder_cm: 'Shoulder', length_cm: 'Length',
+      waist_cm: 'Waist', hip_cm: 'Hip', inseam_cm: 'Inseam'
+    };
+
+    const params = new URLSearchParams(location.search);
+    const productId = params.get('id');
+
+    let product = null;
+    let variants = [];
+    let selectedSize = null;
+
+    function showEmpty() {
+      document.getElementById('pdLoading').style.display = 'none';
+      document.getElementById('pdEmpty').style.display = 'block';
+    }
+
+    async function loadProduct() {
+      if (!productId) { showEmpty(); return; }
+
+      const { data, error } = await db.from('products').select('*').eq('id', productId).single();
+      if (error || !data) { showEmpty(); return; }
+      product = normalizeProduct(data);
+
+      const { data: variantRows, error: variantError } = await db
+        .from('product_variants')
+        .select('size_label, stock')
+        .eq('product_id', productId)
+        .order('size_label', { ascending: true });
+
+      if (variantError) console.error('load variants error:', variantError.message);
+      variants = variantError ? [] : (variantRows || []);
+
+      // addProductToCartById/toggleWishlistById both key off currentProducts
+      // (the same convention the marketplace grid uses) — populate it with
+      // just this one product so those shared helpers work unmodified here.
+      currentProducts = [product];
+      await loadWishlistedMap();
+
+      render(data);
+    }
+
+    function render(rawData) {
+      document.getElementById('pdLoading').style.display = 'none';
+      document.getElementById('pdContent').style.display = 'grid';
+
+      document.getElementById('pdSeller').textContent = product.seller;
+      document.getElementById('pdName').textContent = product.name;
+      document.getElementById('pdPrice').textContent = `KES ${product.price.toFixed(0)}`;
+
+      const metaEl = document.getElementById('pdMeta');
+      const metaBits = [product.condition, product.wearCategory, product.itemType].filter(Boolean);
+      metaEl.innerHTML = metaBits.map(m => `<span>${escapeHtml(m)}</span>`).join('');
+
+      // Gallery
+      const images = product.images.length ? product.images : [];
+      const mainImg = document.getElementById('pdMainImage');
+      mainImg.src = images[0]?.url ? escapeAttribute(images[0].url) : '';
+
+      document.getElementById('pdThumbs').innerHTML = images.map((img, idx) => `
+        <button type="button" class="pd-thumb ${idx === 0 ? 'active' : ''}" data-idx="${idx}">
+          <img src="${escapeAttribute(img.url || '')}" loading="lazy">
+        </button>`).join('');
+
+      document.querySelectorAll('.pd-thumb').forEach(thumb => {
+        thumb.addEventListener('click', () => {
+          document.querySelectorAll('.pd-thumb').forEach(t => t.classList.remove('active'));
+          thumb.classList.add('active');
+          mainImg.src = escapeAttribute(images[parseInt(thumb.dataset.idx)].url || '');
+        });
+      });
+
+      // Sizes (only shown for products that actually have variants)
+      if (variants.length) {
+        document.getElementById('pdSizeSection').style.display = 'block';
+        document.getElementById('pdSizes').innerHTML = variants.map(v => `
+          <button type="button" class="pd-size-btn" data-size="${escapeAttribute(v.size_label)}"
+            data-stock="${v.stock}" ${v.stock === 0 ? 'disabled' : ''}>
+            ${escapeHtml(v.size_label)}
+          </button>`).join('');
+
+        document.querySelectorAll('.pd-size-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            document.querySelectorAll('.pd-size-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            selectedSize = btn.dataset.size;
+            const stock = parseInt(btn.dataset.stock, 10);
+            document.getElementById('pdSizeHint').textContent =
+              stock < 5 ? `Only ${stock} left in size ${selectedSize}` : '';
+          });
+        });
+      }
+
+      // Size guide — passive display of the garment cm data from Phase 4a.
+      // No fit matching against member measurements yet (Phase 4c).
+      const specs = Array.isArray(rawData.size_specs) ? rawData.size_specs : [];
+      if (specs.length) {
+        const allKeys = [...new Set(specs.flatMap(s => Object.keys(s.garment || {})))];
+
+        document.getElementById('pdGuideSection').style.display = 'block';
+        document.getElementById('pdGuideHead').innerHTML =
+          `<th>Size</th>${allKeys.map(k => `<th>${escapeHtml(GARMENT_FIELD_LABELS[k] || k)} (cm)</th>`).join('')}`;
+        document.getElementById('pdGuideBody').innerHTML = specs.map(s => `
+          <tr>
+            <td>${escapeHtml(s.size_label)}</td>
+            ${allKeys.map(k => `<td>${s.garment?.[k] ?? '—'}</td>`).join('')}
+          </tr>`).join('');
+      }
+
+      updateWishlistButtonUI();
+
+      document.getElementById('pdAddCartBtn').addEventListener('click', () => {
+        if (variants.length && !selectedSize) { showToast('Please select a size first.', 'error'); return; }
+        addProductToCartById(product.id);
+      });
+
+      document.getElementById('pdWishlistBtn').addEventListener('click', async () => {
+        await toggleWishlistById(product.id);
+        updateWishlistButtonUI();
+      });
+    }
+
+    function updateWishlistButtonUI() {
+      const btn = document.getElementById('pdWishlistBtn');
+      const active = wishlistedProductMap.has(product.id);
+      btn.textContent = active ? '♥ Wishlisted' : '♡ Wishlist';
+      btn.classList.toggle('active', active);
+    }
+
+    document.addEventListener('DOMContentLoaded', loadProduct);
+  </script>
+
+</body>
+</html>

@@ -946,18 +946,18 @@ function renderProductGrid(products) {
 
     return `
       <div class="product-card" data-id="${p.id}" data-stock="${p.stock}">
-        <div class="product-image" style="background:${p.gradient};border-radius:12px 12px 0 0;overflow:hidden;">
+        <div class="product-image" style="background:${p.gradient};border-radius:12px 12px 0 0;overflow:hidden;cursor:pointer;" onclick="location.href='product.html?id=${p.id}'">
           ${imageHtml}
           ${p.badge && p.badge.toLowerCase() !== 'new' ? `<div class="product-badge">${safeBadge}</div>` : ''}
           ${stockBadge}
-          <button class="wishlist-btn${wishlistActiveClass}" onclick="toggleWishlist(this)" title="${isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'}">${wishlistGlyph}</button>
+          <button class="wishlist-btn${wishlistActiveClass}" onclick="event.stopPropagation(); toggleWishlist(this)" title="${isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'}">${wishlistGlyph}</button>
         </div>
         <div class="product-details">
           <div class="product-seller">
             <div class="seller-badge" style="background:${p.gradient}"></div>
             <span class="seller-name">${safeSeller}</span>
           </div>
-          <h3 class="product-title">${safeName}</h3>
+          <h3 class="product-title" style="cursor:pointer;" onclick="location.href='product.html?id=${p.id}'">${safeName}</h3>
           ${p.condition ? `<div style="font-size:.75rem;color:#a0a0a0;margin-bottom:.3rem;text-transform:capitalize;">Condition: ${safeCondition}</div>` : ''}
           <div class="product-footer">
             <div class="product-price">KES ${p.price.toFixed(0)}</div>
@@ -966,6 +966,81 @@ function renderProductGrid(products) {
         </div>
       </div>`;
   }).join('');
+}
+
+// ID-based equivalent of toggleWishlist(btn) below — for contexts without
+// a .product-card element (e.g. the product detail page). Mirrors that
+// function's logic almost exactly, just keyed by productId instead of
+// reading it off btn.closest('.product-card'). Looks up product details
+// via currentProducts, same convention as addProductToCartById — callers
+// should ensure currentProducts contains the relevant product(s) first.
+// btn is optional; if passed, its classList/text are updated directly
+// like the original, so it can be dropped straight into a card-style button.
+async function toggleWishlistById(productId, btn) {
+  if (btn?.disabled) return;
+
+  const wasActive = wishlistedProductMap.has(productId);
+  const product   = currentProducts.find(p => p.id === productId);
+  const title     = product?.name || 'Item';
+
+  if (btn) btn.disabled = true;
+
+  try {
+    if (wasActive) {
+      const user = await getCurrentUser();
+      if (!user) {
+        const local = loadLocal('mm_wishlist_guest', []).filter(i => i.product_id !== productId);
+        saveLocal('mm_wishlist_guest', local);
+      } else {
+        const rowId = wishlistedProductMap.get(productId);
+        if (rowId && rowId !== 'guest') {
+          const headers = await getAuthHeader();
+          const res = await fetch(`/api/member/wishlist/${rowId}`, { method: 'DELETE', headers });
+          if (!res.ok) throw new Error('Failed to remove from wishlist');
+        }
+      }
+      wishlistedProductMap.delete(productId);
+      if (btn) { btn.classList.remove('active'); btn.textContent = '♡'; }
+      showToast(`${title} removed from wishlist`, 'info');
+
+    } else {
+      const user = await getCurrentUser();
+      if (!user) {
+        const local = loadLocal('mm_wishlist_guest', []);
+        if (!local.some(i => i.product_id === productId)) {
+          local.push({
+            product_id: productId,
+            name: title,
+            price: product?.price || 0,
+            seller: product?.seller || 'MerchMarket',
+            quantity: 1,
+            image: product?.images?.[0]?.url || ''
+          });
+          saveLocal('mm_wishlist_guest', local);
+        }
+        wishlistedProductMap.set(productId, 'guest');
+      } else {
+        const headers = await getAuthHeader();
+        const res = await fetch('/api/member/wishlist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...headers },
+          body: JSON.stringify({ product_id: productId, quantity: 1 })
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error || 'Failed to add to wishlist');
+        wishlistedProductMap.set(productId, payload.id);
+      }
+      if (btn) { btn.classList.add('active'); btn.textContent = '♥'; }
+      showToast(`${title} added to wishlist!`, 'success');
+    }
+
+    updateWishlistBadge();
+  } catch (err) {
+    console.error('toggleWishlistById error:', err.message);
+    showToast(err.message || 'Wishlist update failed', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 async function toggleWishlist(btn) {
