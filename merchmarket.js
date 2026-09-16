@@ -601,16 +601,18 @@ async function updateCartCount() {
 }
 window.updateCartCount = updateCartCount;
 
-async function addProductToCartRaw(productId, name, price, seller, imageSrc, stock) {
+async function addProductToCartRaw(productId, name, price, seller, imageSrc, stock, size = null) {
   if (stock === 0) { showToast('Out of stock!', 'error'); return; }
 
   const user = await getCurrentUser();
 
   if (!user) {
     let cart = loadLocal('mm_cart_guest', []);
-    const existing = cart.find(i => i.product_id === productId);
+    // Same reasoning as the server-side dedup: a size is its own line item,
+    // so two different sizes of the same product shouldn't merge quantity.
+    const existing = cart.find(i => i.product_id === productId && (i.size || null) === size);
     if (existing) existing.quantity++;
-    else cart.push({ product_id: productId, name, price, seller, quantity: 1, image: imageSrc });
+    else cart.push({ product_id: productId, name, price, seller, quantity: 1, image: imageSrc, size });
     saveLocal('mm_cart_guest', cart);
     showToast(`${name} added to cart!`, 'success');
     updateCartCount();
@@ -621,7 +623,7 @@ async function addProductToCartRaw(productId, name, price, seller, imageSrc, sto
   const res = await fetch('/api/member/cart', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
-    body: JSON.stringify({ product_id: productId, quantity: 1 })
+    body: JSON.stringify({ product_id: productId, quantity: 1, size })
   });
   const payload = await res.json().catch(() => ({}));
 
@@ -649,12 +651,14 @@ async function addProductToCart(btn) {
   await addProductToCartRaw(id, title, price, seller, imageSrc, stock);
 }
 
-// Called from product detail / modal contexts (uses product id directly)
-async function addProductToCartById(productId) {
+// Called from product detail / modal contexts (uses product id directly).
+// size is optional — pages without a size selector (or non-variant
+// products) simply don't pass one, matching cart_items.size being nullable.
+async function addProductToCartById(productId, size = null) {
   const product = currentProducts.find(p => p.id === productId);
   if (!product) { showToast('Product not found', 'error'); return; }
   const imageSrc = product.images?.[0]?.url || product.images?.[0] || '';
-  await addProductToCartRaw(productId, product.name, product.price, product.seller, imageSrc, product.stock);
+  await addProductToCartRaw(productId, product.name, product.price, product.seller, imageSrc, product.stock, size);
 }
 
 

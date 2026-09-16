@@ -107,7 +107,6 @@
           <div class="pd-section-title">Select Size</div>
           <div class="pd-sizes" id="pdSizes"></div>
           <div class="pd-size-hint" id="pdSizeHint"></div>
-          <div class="pd-guide-note">Size selection confirms availability. Cart/wishlist size tracking is coming soon — for now, contact the seller to confirm size on pickup.</div>
         </div>
 
         <div class="pd-actions">
@@ -134,18 +133,13 @@
     /* ============================================================
        PRODUCT DETAIL PAGE — Phase 4b
        Add to Cart / Wishlist use the real addProductToCartById() and
-       new toggleWishlistById() helpers from merchmarket.js (both key
-       off `currentProducts`, populated below with this one product).
+       toggleWishlistById() helpers from merchmarket.js (both key off
+       `currentProducts`, populated below with this one product).
 
-       KNOWN LIMITATION: cart_items/wishlists have no `size` column yet
-       (confirmed by reading server.js's /api/member/cart and
-       /api/member/wishlist routes — neither reads/writes size, and the
-       Supabase migration to add it couldn't be applied this session
-       because of a DB connectivity outage). Size selection here is
-       real and enforced (checks actual per-size stock from
-       product_variants) but is NOT yet persisted to the cart/wishlist
-       row — that needs a follow-up migration + route update once
-       Supabase access is confirmed working again.
+       Selected size is passed through to addProductToCartById() and
+       persisted on the cart_items row (cart_items.size). Wishlist stays
+       product-level only, by design — it's a bookmark, not a checkout
+       line item, so size doesn't need tracking there.
     ============================================================ */
 
     const GARMENT_FIELD_LABELS = {
@@ -261,7 +255,7 @@
 
       document.getElementById('pdAddCartBtn').addEventListener('click', () => {
         if (variants.length && !selectedSize) { showToast('Please select a size first.', 'error'); return; }
-        addProductToCartById(product.id);
+        addProductToCartById(product.id, selectedSize);
       });
 
       document.getElementById('pdWishlistBtn').addEventListener('click', async () => {

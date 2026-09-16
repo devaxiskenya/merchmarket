@@ -29,6 +29,7 @@
         quantity: row.quantity || 1,
         sku: row.products?.sku || '',
         stock: row.products?.stock,
+        size: row.size || '',
         image: row.products?.images?.[0]?.url || row.products?.images?.[0] || ''
       }));
     }
@@ -64,7 +65,7 @@
         <div class="item-thumb">${thumb}</div>
         <div class="item-info">
           <div class="item-name">${escapeHtml(item.name || 'Untitled')}</div>
-          <div class="item-seller">${escapeHtml(item.seller || 'MerchMarket')}</div>
+          <div class="item-seller">${escapeHtml(item.seller || 'MerchMarket')}${item.size ? ` &nbsp;•&nbsp; Size: ${escapeHtml(item.size)}` : ''}</div>
         </div>
         <div class="item-qty">
           <button class="qty-btn" onclick="changeCartQty('${escapeHtml(rowId)}', -1)">−</button>

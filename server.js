@@ -415,6 +415,7 @@ app.get('/api/member/cart', requireAuth, async (req, res) => {
       .select(`
         id,
         quantity,
+        size,
         products (
           id, name, price, seller, images, sku, stock
         )
@@ -431,18 +432,25 @@ app.get('/api/member/cart', requireAuth, async (req, res) => {
 
 app.post('/api/member/cart', requireAuth, async (req, res) => {
   try {
-    const { product_id, quantity = 1 } = req.body || {};
+    const { product_id, quantity = 1, size = null } = req.body || {};
     if (!product_id) {
       return res.status(400).json({ error: 'product_id is required' });
     }
 
     const qty = Math.max(1, parseInt(quantity, 10) || 1);
-    const { data: existing, error: existingError } = await req.supabase
+
+    // A product with sizes needs each size treated as its own cart line —
+    // otherwise picking "L" then later "M" would just bump the quantity of
+    // whichever row happened to exist. size is nullable (non-variant
+    // products), and Postgres NULL never equals NULL via .eq(), so the
+    // "no size" case has to use .is() instead.
+    let existingQuery = req.supabase
       .from('cart_items')
       .select('id, quantity')
       .eq('user_id', req.user.id)
-      .eq('product_id', product_id)
-      .maybeSingle();
+      .eq('product_id', product_id);
+    existingQuery = size ? existingQuery.eq('size', size) : existingQuery.is('size', null);
+    const { data: existing, error: existingError } = await existingQuery.maybeSingle();
 
     if (existingError) throw existingError;
 
@@ -457,7 +465,7 @@ app.post('/api/member/cart', requireAuth, async (req, res) => {
 
     const { error: insertError } = await req.supabase
       .from('cart_items')
-      .insert({ user_id: req.user.id, product_id, quantity: qty, added_at: new Date().toISOString() });
+      .insert({ user_id: req.user.id, product_id, quantity: qty, size, added_at: new Date().toISOString() });
 
     if (insertError) throw insertError;
     res.json({ ok: true, updated: false });
