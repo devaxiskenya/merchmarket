@@ -592,6 +592,98 @@ app.post('/api/payments/pesapal/initiate', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'No orders supplied' });
     }
 
+    // Never trust client-sent prices/totals/brands: re-derive everything from
+    // the products table. The client only supplies product_id, quantity, location.
+    const requested = [];
+    let location = 'Nairobi, Kenya';
+    for (const order of orders) {
+      if (order?.location && location === 'Nairobi, Kenya') location = String(order.location).slice(0, 200);
+      for (const item of (Array.isArray(order?.items) ? order.items : [])) {
+        const qty = Number.parseInt(item?.quantity, 10);
+        if (!item?.product_id || !Number.isInteger(qty) || qty < 1 || qty > 100) {
+          return res.status(400).json({ error: 'Invalid item or quantity' });
+        }
+        requested.push({ product_id: item.product_id, quantity: qty });
+      }
+    }
+    if (requested.length === 0) {
+      return res.status(400).json({ error: 'No valid orders created' });
+    }
+
+    const productIds = [...new Set(requested.map(r => r.product_id))];
+    const { data: products, error: productsError } = await req.supabase
+      .from('products')
+      .select('id, brand_id, price, stock, sku')
+      .in('id', productIds);
+    if (productsError) throw productsError;
+    const productMap = new Map((products || []).map(p => [String(p.id), p]));
+
+    // Group by the brand that actually owns each product.
+    const byBrand = new Map();
+    for (const r of requested) {
+      const p = productMap.get(String(r.product_id));
+      if (!p) return res.status(400).json({ error: 'A product in your cart no longer exists' });
+      if (p.stock != null && p.stock < r.quantity) {
+        return res.status(400).json({ error: 'Not enough stock for one of the items' });
+      }
+      if (!byBrand.has(p.brand_id)) byBrand.set(p.brand_id, []);
+      byBrand.get(p.brand_id).push({ product: p, quantity: r.quantity });
+    }
+
+    const checkoutGroupId = crypto.randomUUID();
+    const created = [];
+    let combinedTotal = 0;
+
+    for (const [brand_id, lines] of byBrand.entries()) {
+      const amount = lines.reduce((sum, l) => sum + (parseFloat(l.product.price) || 0) * l.quantity, 0);
+      combinedTotal += amount;
+
+      const { data, error } = await req.supabase
+        .from('orders')
+        .insert({
+          user_id: req.user.id,
+          brand_id,
+          total_amount: amount.toFixed(2),
+          status: 'pending',
+          checkout_group_id: checkoutGroupId,
+          location,
+          created_at: new Date().toISOString()
+        })
+        .select('id')
+        .single();
+
+      if (error || !data) throw error || new Error('Failed to create order');
+
+      const orderItems = lines.map(l => ({
+        order_id: data.id,
+        product_id: l.product.id,
+        quantity: l.quantity,
+        sku: l.product.sku || '',
+        unit_price: l.product.price
+      }));
+      const { error: itemsError } = await req.supabase.from('order_items').insert(orderItems);
+      if (itemsError) throw itemsError;
+
+      created.push(data.id);
+    }
+
+    if (created.length === 0) {
+      return res.status(400).json({ error: 'No valid orders created' });
+    }
+
+    res.json({ ok: true, orderIds: created });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to create member orders', details: e.message });
+  }
+});
+
+app.post('/api/payments/pesapal/initiate', requireAuth, async (req, res) => {
+  try {
+    const { orders, billing_address } = req.body || {};
+    if (!Array.isArray(orders) || orders.length === 0) {
+      return res.status(400).json({ error: 'No orders supplied' });
+    }
+
     const checkoutGroupId = crypto.randomUUID();
     const created = [];
     let combinedTotal = 0;
@@ -723,7 +815,7 @@ app.get('/api/payments/pesapal/status', requireAuth, async (req, res) => {
 
     const { data, error } = await req.supabase
       .from('orders')
-      .select('id, payment_status, status')
+      .select('id, payment_status, status, pesapal_tracking_id')
       .eq('checkout_group_id', checkout_group_id)
       .eq('user_id', req.user.id);
 
@@ -732,9 +824,30 @@ app.get('/api/payments/pesapal/status', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'No orders found for this checkout' });
     }
 
+    // Don't depend solely on the IPN webhook: if still unpaid, ask Pesapal
+    // directly (the same verified call the IPN handler makes).
+    const trackingId = data.find(o => o.pesapal_tracking_id)?.pesapal_tracking_id;
+    if (trackingId && data.some(o => o.payment_status !== 'paid' && o.payment_status !== 'failed')) {
+      try {
+        const statusPayload = await getPesapalTransactionStatus(trackingId);
+        const verified = pesapalStatusToPaymentStatus(statusPayload);
+        if (verified !== 'unpaid') {
+          const supabaseAdmin = createSupabaseServiceClient();
+          const { error: updError } = await supabaseAdmin
+            .from('orders')
+            .update({ payment_status: verified })
+            .eq('checkout_group_id', checkout_group_id)
+            .eq('user_id', req.user.id);
+          if (!updError) data.forEach(o => { o.payment_status = verified; });
+        }
+      } catch (verifyErr) {
+        console.error('pesapal direct verify failed:', verifyErr.message);
+      }
+    }
+
     const anyFailed = data.some(o => o.payment_status === 'failed');
     const allPaid = data.every(o => o.payment_status === 'paid');
-    res.json({ orders: data, payment_status: allPaid ? 'paid' : (anyFailed ? 'failed' : 'unpaid') });
+    res.json({ orders: data.map(({ pesapal_tracking_id, ...o }) => o), payment_status: allPaid ? 'paid' : (anyFailed ? 'failed' : 'unpaid') });
   } catch (e) {
     res.status(500).json({ error: 'Failed to check payment status', details: e.message });
   }
