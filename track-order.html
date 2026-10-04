@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Track Order — MerchMarket</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="merchmarket.css">
+  <style>
+    body { padding-top: 90px; }
+    .track-section { max-width: 820px; margin: 2rem auto; padding: 0 1.25rem 3rem; }
+    .track-title {
+      font-family: 'Syne', sans-serif; font-size: 2rem; font-weight: 800;
+      background: linear-gradient(135deg, #FFD8B5, #c47d2e);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      margin-bottom: .4rem;
+    }
+    .track-sub { color: #a0a0a0; font-size: .92rem; margin-bottom: 1.8rem; }
+    .back-link { color: #c47d2e; text-decoration: none; font-weight: 600; font-size: .9rem; }
+
+    .shipment {
+      background: rgba(255,255,255,.04); border: 1px solid rgba(170,111,2,.22);
+      border-radius: 16px; padding: 1.4rem; margin-bottom: 1.4rem;
+    }
+    .shipment.current { border-color: rgba(196,125,46,.7); }
+    .ship-head { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .ship-seller { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 1.15rem; color: #fff; }
+    .ship-meta { color: #a0a0a0; font-size: .85rem; margin-top: .2rem; font-family: monospace; }
+    .ship-total { font-weight: 700; color: #ffd8b5; }
+
+    .pill { display: inline-block; padding: .25rem .8rem; border-radius: 20px; font-size: .74rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+    .pill.paid      { background: rgba(76,175,80,.15);  color: #4caf50; border: 1px solid rgba(76,175,80,.3); }
+    .pill.unpaid    { background: rgba(255,152,0,.15);  color: #ff9800; border: 1px solid rgba(255,152,0,.3); }
+    .pill.cancelled { background: rgba(244,67,54,.12);  color: #f44336; border: 1px solid rgba(244,67,54,.2); }
+
+    .items { margin: .4rem 0 1.2rem; padding: 0; list-style: none; }
+    .items li { display: flex; justify-content: space-between; padding: .45rem 0; border-bottom: 1px solid rgba(255,255,255,.06); color: #fff; font-size: .92rem; }
+    .items li:last-child { border-bottom: none; }
+    .items .qty { color: #a0a0a0; }
+
+    .timeline { list-style: none; margin: 0; padding: 0 0 0 .2rem; }
+    .step { position: relative; padding: 0 0 1.15rem 2rem; color: #6f6f6f; }
+    .step:last-child { padding-bottom: 0; }
+    .step::before {
+      content: ''; position: absolute; left: 7px; top: 18px; bottom: -2px; width: 2px; background: rgba(255,255,255,.12);
+    }
+    .step:last-child::before { display: none; }
+    .step .dot {
+      position: absolute; left: 0; top: 2px; width: 16px; height: 16px; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,.25); background: transparent;
+    }
+    .step .label { font-weight: 600; font-size: .95rem; }
+    .step .hint  { font-size: .8rem; margin-top: .1rem; }
+    .step.done { color: #fff; }
+    .step.done .dot { background: #4caf50; border-color: #4caf50; }
+    .step.done::before { background: #4caf50; }
+    .step.now { color: #ffd8b5; }
+    .step.now .dot { background: #c47d2e; border-color: #c47d2e; box-shadow: 0 0 0 4px rgba(196,125,46,.25); }
+
+    .notice { margin-top: 1rem; padding: .8rem 1rem; border-radius: 10px; font-size: .86rem; }
+    .notice.warn { background: rgba(255,152,0,.1); color: #ffb74d; border: 1px solid rgba(255,152,0,.25); }
+    .notice.bad  { background: rgba(244,67,54,.1); color: #ef9a9a; border: 1px solid rgba(244,67,54,.25); }
+
+    .empty { text-align: center; padding: 4rem 1rem; color: #a0a0a0; }
+    .empty a { color: #c47d2e; font-weight: 600; text-decoration: none; }
+  </style>
+</head>
+<body class="order-body body">
+
+  <div id="nav-root"></div>
+
+  <section class="track-section">
+    <a class="back-link" href="orders.html">← My Orders</a>
+    <h1 class="track-title" id="track-title" style="margin-top:.8rem;">Track Order</h1>
+    <p class="track-sub" id="track-sub">Loading…</p>
+    <div id="track-body"></div>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="merchmarket.js"></script>
+  <script>
+  (function () {
+    // Stage order. Maps the statuses that exist today onto buyer-facing steps.
+    // 'active' and 'processing' mean the seller is preparing the order;
+    // 'completed' and 'delivered' both mean it reached the buyer.
+    const STEPS = [
+      { key: 'placed',    label: 'Order placed',        hint: 'We received your order.' },
+      { key: 'paid',      label: 'Payment received',    hint: 'Your payment was confirmed.' },
+      { key: 'confirmed', label: 'Confirmed by seller', hint: 'The seller accepted your order.' },
+      { key: 'preparing', label: 'Being prepared',      hint: 'The seller is getting your items ready.' },
+      { key: 'shipped',   label: 'Shipped',             hint: 'Your order is on its way.' },
+      { key: 'delivered', label: 'Delivered',           hint: 'Your order has arrived.' }
+    ];
+
+    // How many steps are complete for a given order.
+    function progress(o) {
+      let n = 1;                                   // placed
+      if (o.payment_status === 'paid') n = 2;      // paid
+      if (n < 2) return n;                         // nothing moves until paid
+      const s = (o.status || 'pending').toLowerCase();
+      if (s === 'confirmed') n = 3;
+      else if (s === 'active' || s === 'processing') n = 4;
+      else if (s === 'shipped') n = 5;
+      else if (s === 'completed' || s === 'delivered') n = 6;
+      return n;
+    }
+
+    function money(n) { return 'KES ' + (Number(n) || 0).toLocaleString(); }
+    function shortId(id) { return String(id || '').slice(0, 8); }
+
+    function timelineHtml(o) {
+      const done = progress(o);
+      const cancelled = (o.status || '').toLowerCase() === 'cancelled';
+      return '<ul class="timeline">' + STEPS.map((s, i) => {
+        let cls = '';
+        if (!cancelled) {
+          if (i < done - 1) cls = 'done';
+          else if (i === done - 1) cls = (done === STEPS.length ? 'done' : 'now');
+        } else if (i === 0) cls = 'done';
+        const when = (i === 0 && o.created_at)
+          ? new Date(o.created_at).toLocaleString('en-KE', { dateStyle: 'medium', timeStyle: 'short' })
+          : s.hint;
+        return '<li class="step ' + cls + '"><span class="dot"></span>' +
+               '<div class="label">' + escapeHtml(s.label) + '</div>' +
+               '<div class="hint">' + escapeHtml(when) + '</div></li>';
+      }).join('') + '</ul>';
+    }
+
+    function shipmentHtml(o, isCurrent, multi) {
+      const items = o.order_items || [];
+      const seller = (items[0] && items[0].products && items[0].products.seller) || 'MerchMarket seller';
+      const cancelled = (o.status || '').toLowerCase() === 'cancelled';
+      const paid = o.payment_status === 'paid';
+
+      const itemsHtml = items.map(i =>
+        '<li><span>' + escapeHtml((i.products && i.products.name) || i.sku || 'Item') +
+        ' <span class="qty">× ' + (i.quantity || 1) + '</span></span>' +
+        '<span>' + money((Number(i.unit_price ?? i.price) || 0) * (i.quantity || 1)) + '</span></li>'
+      ).join('');
+
+      let notice = '';
+      if (cancelled) notice = '<div class="notice bad">This order was cancelled.</div>';
+      else if (!paid) notice = '<div class="notice warn">Waiting for payment. The seller can’t start on this order until it is paid.</div>';
+
+      return '<div class="shipment' + (isCurrent && multi ? ' current' : '') + '">' +
+        '<div class="ship-head"><div>' +
+          '<div class="ship-seller">' + escapeHtml(seller) + '</div>' +
+          '<div class="ship-meta">#' + escapeHtml(shortId(o.id)) + '</div></div>' +
+          '<div style="text-align:right;">' +
+            '<div class="ship-total">' + money(o.total_amount) + '</div>' +
+            '<span class="pill ' + (cancelled ? 'cancelled' : (paid ? 'paid' : 'unpaid')) + '">' +
+              (cancelled ? 'Cancelled' : (paid ? 'Paid' : 'Unpaid')) + '</span></div></div>' +
+        '<ul class="items">' + itemsHtml + '</ul>' +
+        timelineHtml(o) + notice +
+      '</div>';
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      const body  = document.getElementById('track-body');
+      const title = document.getElementById('track-title');
+      const sub   = document.getElementById('track-sub');
+
+      const user = await getCurrentUser();
+      if (!user) {
+        sub.textContent = '';
+        body.innerHTML = '<div class="empty">Please <a href="login.html">log in</a> to track your orders.</div>';
+        return;
+      }
+
+      const id = new URLSearchParams(location.search).get('id');
+      const headers = await getAuthHeader();
+      const res = await fetch('/api/member/orders', { headers });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        sub.textContent = '';
+        body.innerHTML = '<div class="empty">We couldn’t load your orders. Please try again.</div>';
+        return;
+      }
+
+      const all = payload.orders || [];
+      const order = all.find(o => String(o.id) === String(id));
+      if (!order) {
+        sub.textContent = '';
+        body.innerHTML = '<div class="empty">Order not found. <a href="orders.html">Back to My Orders</a></div>';
+        return;
+      }
+
+      // One checkout can create one order per brand; show them together.
+      const group = order.checkout_group_id
+        ? all.filter(o => o.checkout_group_id === order.checkout_group_id)
+        : [order];
+      group.sort((a, b) => (a.id === order.id ? -1 : b.id === order.id ? 1 : 0));
+
+      const multi = group.length > 1;
+      title.textContent = multi ? 'Your Order' : 'Order #' + shortId(order.id);
+      const placed = order.created_at
+        ? new Date(order.created_at).toLocaleDateString('en-KE', { dateStyle: 'long' }) : '';
+      sub.textContent = (placed ? 'Placed on ' + placed + '. ' : '') +
+        (multi ? 'Your items ship from ' + group.length + ' sellers, so each has its own delivery below.' : '');
+
+      body.innerHTML = group.map(o => shipmentHtml(o, o.id === order.id, multi)).join('');
+    });
+  })();
+  </script>
+</body>
+</html>
