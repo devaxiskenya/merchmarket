@@ -2,9 +2,9 @@
    MERCHMARKET — CART PAGE JS
    - Cart rows live in Supabase `cart_items` table, served via
      /api/member/cart (separate from `wishlists`/wishlist.js).
-   - Checkout groups items by seller and posts to /api/member/orders,
-     the same endpoint and payload shape wishlist.js uses.
-   - No payment is collected on-site.
+   - Checkout posts product_id + quantity to /api/payments/pesapal/initiate;
+     the server groups by products.brand_id and redirects to Pesapal.
+   - Buyers pay MerchMarket via Pesapal, never a brand directly.
    ======================================== */
 
 (function () {
@@ -36,19 +36,6 @@
 
     // Guest shape from localStorage already matches the flat item shape
     return (items || []).map(item => ({ ...item, _cartRowId: item.product_id }));
-  }
-
-  async function getCatalogBrandMap() {
-    const { data, error } = await db
-      .from('profiles')
-      .select('id, name')
-      .eq('type', 'brand');
-
-    if (error) { console.error('getCatalogBrandMap error:', error.message); return {}; }
-
-    const map = {};
-    (data || []).forEach(b => { map[b.name] = b.id; });
-    return map;
   }
 
   /* ─── render ──────────────────────────────────────────────── */
@@ -230,38 +217,19 @@
     if (btn) { btn.disabled = true; btn.textContent = 'Redirecting to payment…'; }
 
     try {
-      const brandMap = await getCatalogBrandMap();
-
-      const bySeller = {};
-      _cartCache.forEach(item => {
-        const seller = item.seller || 'MerchMarket';
-        if (!bySeller[seller]) bySeller[seller] = [];
-        bySeller[seller].push(item);
-      });
-
-      const orders = [];
+      // The server re-derives brand, price and totals from the products
+      // table, so the client only sends product_id + quantity + location.
+      // Checkout never depends on a brand profile or a brand payment method.
       const deliveryLocation = (user.address && user.address.trim()) || 'Nairobi, Kenya';
+      const orders = [{
+        location: deliveryLocation,
+        items: _cartCache
+          .filter(i => i.id)
+          .map(i => ({ product_id: i.id, quantity: i.quantity || 1 }))
+      }];
 
-      for (const [seller, items] of Object.entries(bySeller)) {
-        const brandId = brandMap[seller];
-        if (!brandId) continue;
-
-        const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-        orders.push({
-          brand_id: brandId,
-          total_amount: total.toFixed(2),
-          location: deliveryLocation,
-          items: items.map(i => ({
-            product_id: i.id,
-            quantity: i.quantity,
-            sku: i.sku || '',
-            unit_price: i.price
-          }))
-        });
-      }
-
-      if (orders.length === 0) {
-        showToast('No valid brand sellers found.', 'error');
+      if (!orders[0].items.length) {
+        showToast('Your cart has items that are no longer available.', 'error');
         return;
       }
 

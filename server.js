@@ -670,63 +670,6 @@ app.post('/api/payments/pesapal/initiate', requireAuth, async (req, res) => {
     if (created.length === 0) {
       return res.status(400).json({ error: 'No valid orders created' });
     }
-
-    res.json({ ok: true, orderIds: created });
-  } catch (e) {
-    res.status(500).json({ error: 'Failed to create member orders', details: e.message });
-  }
-});
-
-app.post('/api/payments/pesapal/initiate', requireAuth, async (req, res) => {
-  try {
-    const { orders, billing_address } = req.body || {};
-    if (!Array.isArray(orders) || orders.length === 0) {
-      return res.status(400).json({ error: 'No orders supplied' });
-    }
-
-    const checkoutGroupId = crypto.randomUUID();
-    const created = [];
-    let combinedTotal = 0;
-
-    for (const order of orders) {
-      const { brand_id, total_amount, location, items = [] } = order || {};
-      if (!brand_id || !Array.isArray(items) || items.length === 0) continue;
-
-      const amount = parseFloat(total_amount) || 0;
-      combinedTotal += amount;
-
-      const { data, error } = await req.supabase
-        .from('orders')
-        .insert({
-          user_id: req.user.id,
-          brand_id,
-          total_amount: String(total_amount ?? '0.00'),
-          status: 'pending',
-          checkout_group_id: checkoutGroupId,
-          location: location || 'Nairobi, Kenya',
-          created_at: new Date().toISOString()
-        })
-        .select('id')
-        .single();
-
-      if (error || !data) throw error || new Error('Failed to create order');
-
-      const orderItems = items.map(item => ({
-        order_id: data.id,
-        product_id: item.product_id,
-        quantity: item.quantity,
-        sku: item.sku || '',
-        unit_price: item.unit_price
-      }));
-      const { error: itemsError } = await req.supabase.from('order_items').insert(orderItems);
-      if (itemsError) throw itemsError;
-
-      created.push(data.id);
-    }
-
-    if (created.length === 0) {
-      return res.status(400).json({ error: 'No valid orders created' });
-    }
     if (combinedTotal <= 0) {
       return res.status(400).json({ error: 'Order total must be greater than zero' });
     }
@@ -760,6 +703,7 @@ app.post('/api/payments/pesapal/initiate', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Failed to start payment', details: e.message });
   }
 });
+
 
 // Shared handler for both GET and POST — Pesapal was registered with
 // ipn_notification_type 'GET', but some Pesapal accounts/configs deliver via
