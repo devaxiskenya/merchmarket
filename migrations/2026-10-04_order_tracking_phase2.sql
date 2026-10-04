@@ -255,4 +255,9 @@ grant execute on function public.confirm_delivery(uuid, text, uuid, text) to ser
 insert into public.order_status_history(order_id, from_status, to_status, note, actor_role, created_at)
 select id, null, status, 'Existing order', 'system', created_at from public.orders;
 
+-- 7. Brands may delete only unpaid orders; a paid order is a record that must be kept.
+drop policy if exists orders_brand_delete on public.orders;
+create policy orders_brand_delete on public.orders for delete
+  using (brand_id = (select auth.uid()) and payment_status <> 'paid');
+
 commit;
