@@ -566,6 +566,7 @@ app.post('/api/member/orders', requireAuth, async (req, res) => {
         product_id: item.product_id,
         quantity: item.quantity,
         sku: item.sku || '',
+        price: item.unit_price,
         unit_price: item.unit_price
       }));
 
@@ -659,6 +660,7 @@ app.post('/api/payments/pesapal/initiate', requireAuth, async (req, res) => {
         product_id: l.product.id,
         quantity: l.quantity,
         sku: l.product.sku || '',
+        price: l.product.price,
         unit_price: l.product.price
       }));
       const { error: itemsError } = await req.supabase.from('order_items').insert(orderItems);
