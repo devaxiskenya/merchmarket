@@ -309,7 +309,7 @@ app.get('/api/member/orders', requireAuth, async (req, res) => {
   try {
     const { data, error } = await req.supabase
       .from('orders')
-      .select('*, order_items(*, products(name, sku, seller))')
+      .select('*, order_items(*, products(name, sku, seller)), order_status_history(to_status, note, created_at)')
       .eq('user_id', req.user.id)
       .order('created_at', { ascending: false });
 
@@ -846,26 +846,39 @@ app.get('/api/brand/orders/:id', requireAuth, requireBrand, async (req, res) => 
 
 app.patch('/api/brand/orders/:id/status', requireAuth, requireBrand, async (req, res) => {
   try {
-    const { status } = req.body || {};
-    const allowed = ['pending', 'confirmed', 'active', 'completed', 'cancelled'];
+    const { status, tracking_number, carrier, note } = req.body || {};
+    // 'completed' (delivered) is deliberately absent: only a courier scan can set it.
+    const allowed = ['confirmed', 'active', 'shipped', 'cancelled'];
     if (!allowed.includes(status)) {
-      return res.status(400).json({ error: 'Invalid status value' });
+      return res.status(400).json({ error: 'Invalid status. Delivery is confirmed by the courier scan, not by the seller.' });
     }
+
+    const clean = (v, max) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
+    const update = { status };
+    const trk = clean(tracking_number, 80);
+    const car = clean(carrier, 80);
+    const nt  = clean(note, 300);
+    if (trk) update.tracking_number = trk;
+    if (car) update.carrier = car;
+    if (nt)  update.last_status_note = nt;
 
     const { data, error } = await req.supabase
       .from('orders')
-      .update({ status })
+      .update(update)
       .eq('id', req.params.id)
       .eq('brand_id', req.brandProfile.id)
-      .select('id, status, payment_status');
+      .select('id, status, payment_status, tracking_number, carrier');
 
     if (error) {
-      // The DB-level payment-gate trigger blocks unpaid orders from being
-      // progressed — surface that as a clean, expected 409 rather than a
-      // generic 500, since any client (this route, or a future one) hits
-      // the same trigger and the message should be actionable.
+      // Database rules (payment gate, allowed moves, system-only fields) surface here.
       if (/payment_status is paid/i.test(error.message || '')) {
         return res.status(409).json({ error: 'This order has not been paid yet — it cannot be progressed until payment is confirmed.' });
+      }
+      if (/cannot move from/i.test(error.message || '')) {
+        return res.status(409).json({ error: error.message.split('\n')[0] });
+      }
+      if (error.code === '42501' || /only be changed by the system/i.test(error.message || '')) {
+        return res.status(403).json({ error: 'That field can only be changed by the system.' });
       }
       throw error;
     }
@@ -877,6 +890,78 @@ app.patch('/api/brand/orders/:id/status', requireAuth, requireBrand, async (req,
     res.json({ ok: true, order: data[0] });
   } catch (e) {
     res.status(500).json({ error: 'Failed to update order status', details: e.message });
+  }
+});
+
+// Buyer: fetch the delivery QR token + backup code for one of their shipped orders.
+// The codes live in a table brands cannot read; only the order's buyer gets them here.
+app.get('/api/member/orders/:id/delivery-code', requireAuth, async (req, res) => {
+  try {
+    const { data: order, error } = await req.supabase
+      .from('orders')
+      .select('id, user_id, status')
+      .eq('id', req.params.id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.status !== 'shipped') {
+      return res.status(409).json({ error: 'A delivery code is only available while your order is shipped.' });
+    }
+
+    const admin = createSupabaseServiceClient();
+    const { data: code, error: codeErr } = await admin
+      .from('delivery_codes')
+      .select('token, short_code, redeemed_at')
+      .eq('order_id', order.id)
+      .maybeSingle();
+    if (codeErr) throw codeErr;
+    if (!code || code.redeemed_at) return res.status(404).json({ error: 'No active delivery code for this order' });
+
+    res.json({ order_id: order.id, token: code.token, short_code: code.short_code });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to load delivery code', details: e.message });
+  }
+});
+
+// Courier: confirm a delivery by QR token, or by order id + 6-digit backup code.
+// Auth is a courier access code (header x-courier-code), checked against couriers.access_code_hash.
+app.post('/api/courier/confirm-delivery', async (req, res) => {
+  try {
+    const crypto = require('crypto');
+    const rawCode = String(req.headers['x-courier-code'] || '').trim();
+    if (!rawCode) return res.status(401).json({ error: 'Courier access code required' });
+
+    const admin = createSupabaseServiceClient();
+    const hash = crypto.createHash('sha256').update(rawCode, 'utf8').digest('hex');
+    const { data: courier, error: cErr } = await admin
+      .from('couriers').select('id, name').eq('access_code_hash', hash).eq('active', true).maybeSingle();
+    if (cErr) throw cErr;
+    if (!courier) return res.status(401).json({ error: 'Invalid courier access code' });
+
+    const { token, order_id, short_code } = req.body || {};
+    const { data: result, error } = await admin.rpc('confirm_delivery', {
+      p_courier: courier.id,
+      p_token: typeof token === 'string' && token ? token.trim() : null,
+      p_order_id: typeof order_id === 'string' && order_id ? order_id.trim() : null,
+      p_short_code: typeof short_code === 'string' && short_code ? short_code.trim() : null
+    });
+    if (error) throw error;
+
+    if (result && result.ok) return res.json({ ok: true, order_id: result.order_id });
+
+    const reason = result && result.reason;
+    const map = {
+      invalid:          [400, 'That code is not valid.'],
+      locked:           [429, 'Too many wrong attempts for this order. Ask the buyer to contact support.'],
+      already_redeemed: [409, 'This delivery was already confirmed.'],
+      not_shipped:      [409, 'This order is not marked as shipped.'],
+      unpaid:           [409, 'This order has not been paid.']
+    };
+    const [code, msg] = map[reason] || [400, 'Could not confirm delivery.'];
+    res.status(code).json({ ok: false, reason, error: msg });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to confirm delivery', details: e.message });
   }
 });
 

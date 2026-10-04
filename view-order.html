@@ -123,8 +123,9 @@
       </div>
       <div class="order-actions">
         ${st === 'pending'   ? `<button class="btn btn-primary" style="background:#4caf50;" onclick="updateStatus('confirmed')">Confirm</button>` : ''}
-        ${st === 'confirmed' ? `<button class="btn btn-primary" style="background:#2196f3;" onclick="updateStatus('active')">Mark Shipped</button>` : ''}
-        ${(st === 'active' || st === 'confirmed') ? `<button class="btn btn-primary" style="background:#ff9800;" onclick="updateStatus('completed')">Mark Completed</button>` : ''}
+        ${st === 'confirmed' ? `<button class="btn btn-primary" style="background:#2196f3;" onclick="updateStatus('active')">Start Preparing</button>` : ''}
+        ${(st === 'active' || st === 'confirmed') ? `<button class="btn btn-primary" style="background:#ff9800;" onclick="updateStatus('shipped')">Mark Shipped</button>` : ''}
+        ${st === 'shipped' ? `<p style="margin:0;color:#a0a0a0;font-size:.85rem;">Delivery is confirmed when the courier scans the buyer's code.</p>` : ''}
       </div>
     `;
   }
