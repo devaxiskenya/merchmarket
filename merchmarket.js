@@ -1189,12 +1189,14 @@ async function renderMemberOrders() {
 
     return `
       <tr>
-        <td style="font-family:monospace;color:#ffd8b5;">#${o.id}</td>
+        <td style="font-family:monospace;"><a href="track-order.html?id=${encodeURIComponent(o.id)}" style="color:#ffd8b5;text-decoration:underline;">#${escapeHtml(String(o.id).slice(0, 8))}</a></td>
         <td>${productCell}</td>
         <td>${qtyCell}</td>
         <td style="font-size:.85rem;color:#a0a0a0;">${escapeHtml(o.location) || 'Nairobi, Kenya'}</td>
         <td style="font-size:.85rem;color:#a0a0a0;">${date}</td>
-        <td><span class="status-badge ${statusClass}">${statusClass.charAt(0).toUpperCase() + statusClass.slice(1)}</span></td>
+        <td><span class="status-badge ${statusClass}">${statusClass.charAt(0).toUpperCase() + statusClass.slice(1)}</span>
+          <div style="margin-top:.35rem;font-size:.78rem;color:${o.payment_status === 'paid' ? '#4caf50' : '#ff9800'};">${o.payment_status === 'paid' ? 'Paid' : 'Awaiting payment'}</div>
+          <a href="track-order.html?id=${encodeURIComponent(o.id)}" style="font-size:.78rem;color:#c47d2e;">Track →</a></td>
         <td><strong>KES ${total.toLocaleString()}</strong></td>
       </tr>`;
   }).join('');

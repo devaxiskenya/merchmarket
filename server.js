@@ -309,7 +309,7 @@ app.get('/api/member/orders', requireAuth, async (req, res) => {
   try {
     const { data, error } = await req.supabase
       .from('orders')
-      .select('*, order_items(*, products(name, sku))')
+      .select('*, order_items(*, products(name, sku, seller))')
       .eq('user_id', req.user.id)
       .order('created_at', { ascending: false });
 
