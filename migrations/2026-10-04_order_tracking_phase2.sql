@@ -261,3 +261,11 @@ create policy orders_brand_delete on public.orders for delete
   using (brand_id = (select auth.uid()) and payment_status <> 'paid');
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- Brand riders (applied as migration "order_tracking_brand_riders"):
+--  * couriers.brand_id  (null = platform courier, set = that brand's own rider)
+--  * unique index on access_code_hash
+--  * confirm_delivery() rejects a brand rider scanning another brand's order
+--    (answers "invalid", and does not count against the buyer's backup-code attempts)
+-- See the live function definition for the current body.

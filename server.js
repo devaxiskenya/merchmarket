@@ -893,6 +893,71 @@ app.patch('/api/brand/orders/:id/status', requireAuth, requireBrand, async (req,
   }
 });
 
+// Brand riders: a brand can register its own riders. They use the same scan endpoint as
+// platform couriers but can only confirm that brand's orders (enforced in confirm_delivery).
+// The access code is generated here, shown once, and stored only as a hash.
+app.get('/api/brand/riders', requireAuth, requireBrand, async (req, res) => {
+  try {
+    const admin = createSupabaseServiceClient();
+    const { data, error } = await admin
+      .from('couriers')
+      .select('id, name, active, created_at')
+      .eq('brand_id', req.brandProfile.id)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json({ riders: data || [] });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to load riders', details: e.message });
+  }
+});
+
+app.post('/api/brand/riders', requireAuth, requireBrand, async (req, res) => {
+  try {
+    const crypto = require('crypto');
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim().slice(0, 60) : '';
+    if (!name) return res.status(400).json({ error: 'Rider name is required' });
+
+    const admin = createSupabaseServiceClient();
+    const { count, error: cErr } = await admin
+      .from('couriers').select('id', { count: 'exact', head: true })
+      .eq('brand_id', req.brandProfile.id).eq('active', true);
+    if (cErr) throw cErr;
+    if ((count || 0) >= 20) return res.status(400).json({ error: 'You can have up to 20 active riders. Deactivate one first.' });
+
+    const accessCode = 'MM-' + crypto.randomBytes(12).toString('base64url');
+    const hash = crypto.createHash('sha256').update(accessCode, 'utf8').digest('hex');
+    const { data, error } = await admin
+      .from('couriers')
+      .insert({ name, access_code_hash: hash, brand_id: req.brandProfile.id })
+      .select('id, name, active, created_at')
+      .single();
+    if (error) throw error;
+
+    // The only time the plain code is returned.
+    res.status(201).json({ rider: data, access_code: accessCode });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to add rider', details: e.message });
+  }
+});
+
+app.patch('/api/brand/riders/:id', requireAuth, requireBrand, async (req, res) => {
+  try {
+    if (typeof req.body?.active !== 'boolean') return res.status(400).json({ error: 'active must be true or false' });
+    const admin = createSupabaseServiceClient();
+    const { data, error } = await admin
+      .from('couriers')
+      .update({ active: req.body.active })
+      .eq('id', req.params.id)
+      .eq('brand_id', req.brandProfile.id)
+      .select('id, name, active');
+    if (error) throw error;
+    if (!data || !data.length) return res.status(404).json({ error: 'Rider not found' });
+    res.json({ ok: true, rider: data[0] });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to update rider', details: e.message });
+  }
+});
+
 // Buyer: fetch the delivery QR token + backup code for one of their shipped orders.
 // The codes live in a table brands cannot read; only the order's buyer gets them here.
 app.get('/api/member/orders/:id/delivery-code', requireAuth, async (req, res) => {
