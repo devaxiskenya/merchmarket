@@ -22,12 +22,12 @@ const rateLimitState = new Map();
    this key is NOT the same as SUPABASE_KEY above, which is the
    publishable/anon key used for user-scoped requests). */
 
-const PESAPAL_ENV = process.env.PESAPAL_ENV || 'sandbox';
+const PESAPAL_ENV = (process.env.PESAPAL_ENV || 'sandbox').trim().toLowerCase();
 const PESAPAL_BASE_URL = PESAPAL_ENV === 'live'
   ? 'https://pay.pesapal.com/v3'
   : 'https://cybqa.pesapal.com/pesapalv3';
-const PESAPAL_CONSUMER_KEY = process.env.PESAPAL_CONSUMER_KEY;
-const PESAPAL_CONSUMER_SECRET = process.env.PESAPAL_CONSUMER_SECRET;
+const PESAPAL_CONSUMER_KEY = (process.env.PESAPAL_CONSUMER_KEY || '').trim().replace(/^['"]|['"]$/g, '');
+const PESAPAL_CONSUMER_SECRET = (process.env.PESAPAL_CONSUMER_SECRET || '').trim().replace(/^['"]|['"]$/g, '');
 const APP_DOMAIN = process.env.APP_DOMAIN || 'https://merchmarket.co.ke';
 
 function createSupabaseServiceClient() {
@@ -57,7 +57,10 @@ async function getPesapalToken() {
   });
   const payload = await res.json().catch(() => ({}));
   if (!res.ok || !payload.token) {
-    throw new Error(`Pesapal auth failed: ${payload.message || res.statusText}`);
+    // Pesapal often replies HTTP 200 with { error: { code, message } } and no token.
+    const detail = payload.error?.code || payload.error?.message || payload.message || res.statusText;
+    console.error('pesapal auth failed:', { env: PESAPAL_ENV, baseUrl: PESAPAL_BASE_URL, http: res.status, error: payload.error || null, status: payload.status || null });
+    throw new Error(`Pesapal auth failed (${PESAPAL_ENV}): ${detail}`);
   }
 
   // Pesapal tokens are short-lived — refresh a little early to be safe.
