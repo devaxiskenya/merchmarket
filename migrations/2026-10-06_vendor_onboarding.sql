@@ -61,6 +61,9 @@ declare
   v_type   text  := coalesce(m->>'type', 'member');
   v_pin    text  := upper(nullif(btrim(m->>'kra_pin'), ''));
   v_reason text;
+  -- TESTING: new brands are auto-approved. For launch, change to 'pending'
+  -- (re-run this function with the one-line change) so manual review applies.
+  v_status text := 'approved';
 begin
   insert into public.profiles (id, email, name, type, created_at)
   values (
@@ -87,7 +90,7 @@ begin
         product_category, payout_method, payout_account_number, payout_account_name,
         payout_bank_name, agreement_version, agreement_accepted_at
       ) values (
-        new.id, 'pending', v_reason,
+        new.id, v_status, v_reason,
         case when m->>'business_type' in ('sole_trader','company') then m->>'business_type' end,
         nullif(btrim(m->>'contact_person'), ''),
         nullif(btrim(m->>'phone'), ''),
@@ -107,7 +110,7 @@ begin
         product_category, payout_method, payout_account_number, payout_account_name,
         payout_bank_name, agreement_version, agreement_accepted_at
       ) values (
-        new.id, 'pending', 'KRA PIN already registered to another vendor — needs review',
+        new.id, v_status, 'KRA PIN already registered to another vendor — needs review',
         case when m->>'business_type' in ('sole_trader','company') then m->>'business_type' end,
         nullif(btrim(m->>'contact_person'), ''),
         nullif(btrim(m->>'phone'), ''),
