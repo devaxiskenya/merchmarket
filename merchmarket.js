@@ -250,7 +250,7 @@ function clearProfileCache() {
   _profileFetchPromise = null;
 }
 
-async function createAccount(type, name, email, password) {
+async function createAccount(type, name, email, password, extraMeta = {}) {
   if (!type || !name || !email || !password) {
     const msg = 'Please fill in all fields.';
     showAuthError(msg);
@@ -261,7 +261,7 @@ async function createAccount(type, name, email, password) {
     email,
     password,
     options: {
-      data: { name, type },
+      data: { ...extraMeta, name, type },
       emailRedirectTo: 'https://merchmarket.co.ke/verify.html'
     }
   });

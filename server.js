@@ -1021,7 +1021,130 @@ function cleanVariants(rawVariants) {
     .filter(v => v.size_label && Number.isFinite(v.stock) && v.stock >= 0);
 }
 
-app.post('/api/brand/products', requireAuth, requireBrand, async (req, res) => {
+// -------- Vendor KYC (spec section 7) --------
+const KRA_PIN_RE = /^[AP][0-9]{9}[A-Z]$/;
+const KYC_BUSINESS_TYPES = ['sole_trader', 'company'];
+const KYC_CATEGORIES = ['goods', 'services', 'both'];
+const KYC_PAYOUT_METHODS = ['mpesa_till', 'mpesa_paybill', 'bank'];
+
+const KYC_STATUS_MESSAGES = {
+  pending: 'Your brand account is pending approval. You can list products once MerchMarket has reviewed and approved it.',
+  documents_submitted: 'Your documents are being checked. You can list products once your account is approved.',
+  under_review: 'Your brand account is under review. You can list products once it is approved.',
+  rejected: 'Your brand application was not approved. Update your details on the Profile page and resubmit.',
+  suspended: 'Your brand account is suspended. Contact MerchMarket support to resolve this.'
+};
+
+// Blocks listing/editing products until the brand's vendor_kyc.status is 'approved'.
+async function requireApprovedBrand(req, res, next) {
+  try {
+    const { data, error } = await req.supabase
+      .from('vendor_kyc')
+      .select('status, status_reason')
+      .eq('brand_id', req.brandProfile.id)
+      .maybeSingle();
+    if (error) throw error;
+
+    const status = data?.status || 'pending';
+    if (status !== 'approved') {
+      res.status(403).json({
+        error: KYC_STATUS_MESSAGES[status] || KYC_STATUS_MESSAGES.pending,
+        code: 'BRAND_NOT_APPROVED',
+        status,
+        reason: data?.status_reason || null
+      });
+      return;
+    }
+    next();
+  } catch (e) {
+    res.status(500).json({ error: 'Could not verify brand approval status', details: e.message });
+  }
+}
+
+function cleanKycInput(body = {}) {
+  const str = (v, max = 120) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+  const kraPin = str(body.kra_pin, 11).toUpperCase();
+  const out = {
+    business_type: str(body.business_type, 20),
+    contact_person: str(body.contact_person),
+    phone: str(body.phone, 20),
+    kra_pin: kraPin,
+    product_category: str(body.product_category, 10),
+    payout_method: str(body.payout_method, 20),
+    payout_account_number: str(body.payout_account_number, 40),
+    payout_account_name: str(body.payout_account_name),
+    payout_bank_name: str(body.payout_bank_name)
+  };
+
+  if (!KYC_BUSINESS_TYPES.includes(out.business_type)) return { error: 'Choose a business type.' };
+  if (!out.contact_person) return { error: 'Contact person is required.' };
+  if (!/^(\+?254|0)[17][0-9]{8}$/.test(out.phone.replace(/[\s-]/g, ''))) return { error: 'Enter a valid Kenyan phone number.' };
+  if (!KRA_PIN_RE.test(out.kra_pin)) return { error: 'KRA PIN must look like A123456789Z.' };
+  if (!KYC_CATEGORIES.includes(out.product_category)) return { error: 'Choose a product category.' };
+  if (!KYC_PAYOUT_METHODS.includes(out.payout_method)) return { error: 'Choose a payout method.' };
+  if (!out.payout_account_number) return { error: 'Payout number is required.' };
+  if (!out.payout_account_name) return { error: 'Payout account name is required.' };
+  if (out.payout_method === 'bank' && !out.payout_bank_name) return { error: 'Bank name is required for bank payouts.' };
+  if (out.payout_method !== 'bank') out.payout_bank_name = '';
+
+  out.phone = out.phone.replace(/[\s-]/g, '');
+  out.payout_bank_name = out.payout_bank_name || null;
+  return { value: out };
+}
+
+app.get('/api/brand/kyc', requireAuth, requireBrand, async (req, res) => {
+  try {
+    const { data, error } = await req.supabase
+      .from('vendor_kyc')
+      .select('*')
+      .eq('brand_id', req.brandProfile.id)
+      .maybeSingle();
+    if (error) throw error;
+    res.json({ kyc: data });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to load verification details', details: e.message });
+  }
+});
+
+// Brands can edit their application only while it is pending or rejected.
+// Writes use the service client: vendor_kyc has no browser write policies on purpose.
+app.put('/api/brand/kyc', requireAuth, requireBrand, async (req, res) => {
+  try {
+    const parsed = cleanKycInput(req.body);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+
+    const admin = createSupabaseServiceClient();
+    const { data: current, error: curErr } = await admin
+      .from('vendor_kyc')
+      .select('status')
+      .eq('brand_id', req.brandProfile.id)
+      .maybeSingle();
+    if (curErr) throw curErr;
+
+    const status = current?.status || 'pending';
+    if (!['pending', 'rejected'].includes(status)) {
+      return res.status(409).json({ error: 'Your details can no longer be edited here. Contact support to change them.' });
+    }
+
+    const row = {
+      brand_id: req.brandProfile.id,
+      ...parsed.value,
+      status: 'pending',          // a resubmission after rejection goes back into the queue
+      status_reason: null,
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await admin.from('vendor_kyc').upsert(row, { onConflict: 'brand_id' });
+    if (error) {
+      if (error.code === '23505') return res.status(409).json({ error: 'That KRA PIN is already registered to another vendor.' });
+      throw error;
+    }
+    res.json({ ok: true, status: 'pending' });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to save verification details', details: e.message });
+  }
+});
+
+app.post('/api/brand/products', requireAuth, requireBrand, requireApprovedBrand, async (req, res) => {
   try {
     const { variants: rawVariants, size_specs: rawSizeSpecs, ...rest } = req.body;
     const variants = cleanVariants(rawVariants);
@@ -1065,7 +1188,7 @@ app.post('/api/brand/products', requireAuth, requireBrand, async (req, res) => {
   }
 });
 
-app.put('/api/brand/products/:id', requireAuth, requireBrand, async (req, res) => {
+app.put('/api/brand/products/:id', requireAuth, requireBrand, requireApprovedBrand, async (req, res) => {
   try {
     const { variants: rawVariants, size_specs: rawSizeSpecs, ...rest } = req.body;
     const variants = cleanVariants(rawVariants); // null = field omitted entirely, [] = cleared

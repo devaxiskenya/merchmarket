@@ -37,10 +37,61 @@ function tabSwitch(tabName) {
   if (loaders[tabName]) loaders[tabName]();
 }
 
+/* ─── VENDOR APPROVAL BANNER ─────────────────────────────── */
+
+const KYC_BANNER_COPY = {
+  pending:             'Your brand account is pending approval. You can list products once MerchMarket approves it.',
+  documents_submitted: 'Your documents are being checked. You can list products once your account is approved.',
+  under_review:        'Your brand account is under review. You can list products once it is approved.',
+  rejected:            'Your application was not approved. Update your details on your Profile page and resubmit.',
+  suspended:           'Your brand account is suspended. Contact MerchMarket support to resolve this.'
+};
+
+async function loadKycBanner() {
+  try {
+    const res = await fetch('/api/brand/kyc', { headers: await getAuthHeader() });
+    if (!res.ok) return;
+    const { kyc } = await res.json();
+    const status = kyc?.status || 'pending';
+    if (status === 'approved') return;
+
+    const main = document.querySelector('.admin-main');
+    if (!main || document.getElementById('kyc-banner')) return;
+
+    const banner = document.createElement('div');
+    banner.id = 'kyc-banner';
+    banner.style.cssText = 'margin:0 0 1.2rem;padding:.9rem 1.1rem;border-radius:10px;' +
+      'border:1px solid rgba(196,125,46,.35);background:rgba(196,125,46,.09);' +
+      'color:var(--accent-light,#e0a45f);font-size:.9rem;line-height:1.5;';
+    const msg = document.createElement('div');
+    msg.textContent = KYC_BANNER_COPY[status] || KYC_BANNER_COPY.pending;
+    banner.appendChild(msg);
+    if (kyc?.status_reason) {
+      const why = document.createElement('div');
+      why.style.cssText = 'margin-top:.4rem;opacity:.85;';
+      why.textContent = 'Reason: ' + kyc.status_reason;
+      banner.appendChild(why);
+    }
+    main.insertBefore(banner, main.firstChild);
+
+    // Listing is blocked server-side and in RLS; reflect it in the UI too.
+    const addBtn = document.getElementById('add-inventory');
+    if (addBtn) {
+      addBtn.disabled = true;
+      addBtn.title = 'Available once your brand account is approved';
+      addBtn.style.opacity = '.5';
+      addBtn.style.cursor = 'not-allowed';
+    }
+  } catch (e) {
+    console.warn('KYC banner failed:', e.message);
+  }
+}
+
 /* ─── BOOT ────────────────────────────────────────────────── */
 
 document.addEventListener('DOMContentLoaded', () => {
   console.log('Brandflow admin ready (Supabase mode)');
+  loadKycBanner();
 
   // Nav tab clicks
   document.querySelectorAll('.nav-tab').forEach(tab => {
@@ -58,6 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
   } else {
     addBtn.addEventListener('click', (e) => {
       e.preventDefault();
+      if (addBtn.disabled) return;
       window.location.href = 'add-item.html';
     });
   }
