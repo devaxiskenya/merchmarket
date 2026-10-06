@@ -42,6 +42,27 @@
     .field-hint { color:#666; font-size:.78rem; margin-top:.35rem; }
     .save-row { display:flex; gap:1rem; justify-content:flex-end; margin-top:1.6rem; flex-wrap:wrap; }
     .save-row .btn { min-width: 160px; }
+    .panel select {
+      width:100%; padding:.85rem 1.1rem; border:1px solid var(--border-brand);
+      border-radius:10px; background:rgba(255,255,255,.05); color:#fff;
+      font-family:'DM Sans',sans-serif;
+    }
+    .panel select option { color:#111; }
+    .panel input:disabled, .panel select:disabled, .panel textarea:disabled { opacity:.55; cursor:not-allowed; }
+    .kyc-badge {
+      display:inline-block; margin-left:.6rem; padding:.2rem .65rem; border-radius:999px;
+      font-family:'DM Sans',sans-serif; font-size:.72rem; font-weight:700; letter-spacing:.04em;
+      vertical-align:middle; background:rgba(255,255,255,.08); color:#ccc;
+    }
+    .kyc-badge.approved { background:rgba(46,204,113,.15); color:#2ecc71; }
+    .kyc-badge.rejected, .kyc-badge.suspended { background:rgba(244,67,54,.15); color:#f44336; }
+    .kyc-lock-note {
+      margin-bottom:1.2rem; padding:.8rem 1rem; border-radius:10px; font-size:.86rem; line-height:1.55;
+      border:1px solid rgba(196,125,46,.35); background:rgba(196,125,46,.09); color:#e0a45f;
+    }
+    .kyc-lock-note.locked { border-color:rgba(244,67,54,.3); background:rgba(244,67,54,.07); color:#e8a29b; }
+    .danger-panel { border-color:rgba(244,67,54,.4); }
+    .danger-panel .section-heading { color:#f44336; }
     .mini-note { margin-top:1.2rem; color:var(--text-secondary); font-size:.9rem; }
   </style>
 </head>
@@ -89,9 +110,81 @@
       </form>
     </div>
 
+    <!-- Verification & Business Details -->
+    <div class="panel" id="kycPanel">
+      <div class="section-heading">Verification &amp; Business Details <span id="kycStatusBadge" class="kyc-badge"></span></div>
+      <div id="kycLockNote" class="kyc-lock-note" style="display:none;"></div>
+      <form id="kycForm" novalidate>
+        <div class="field-row">
+          <div class="form-group">
+            <label>Business Type</label>
+            <select id="kyc-business_type">
+              <option value="">Select…</option>
+              <option value="sole_trader">Sole trader / individual</option>
+              <option value="company">Registered company</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>KRA PIN</label>
+            <input type="text" id="kyc-kra_pin" maxlength="11" autocomplete="off" autocapitalize="characters" placeholder="A123456789Z">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="form-group">
+            <label>Contact Person</label>
+            <input type="text" id="kyc-contact_person" autocomplete="name">
+          </div>
+          <div class="form-group">
+            <label>Phone</label>
+            <input type="tel" id="kyc-phone" autocomplete="tel" placeholder="0712 345 678">
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:1rem;">
+          <label>What do you sell?</label>
+          <select id="kyc-product_category">
+            <option value="">Select…</option>
+            <option value="goods">Goods (physical products)</option>
+            <option value="services">Services</option>
+            <option value="both">Both goods and services</option>
+          </select>
+        </div>
+        <div class="field-row">
+          <div class="form-group">
+            <label>Payout Method</label>
+            <select id="kyc-payout_method">
+              <option value="">Select…</option>
+              <option value="mpesa_till">M-Pesa Till (Buy Goods)</option>
+              <option value="mpesa_paybill">M-Pesa Paybill</option>
+              <option value="bank">Bank account</option>
+            </select>
+          </div>
+          <div class="form-group" id="kycBankWrap" style="display:none;">
+            <label>Bank Name</label>
+            <input type="text" id="kyc-payout_bank_name" autocomplete="off">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="form-group">
+            <label>Till / Paybill / Account Number</label>
+            <input type="text" id="kyc-payout_account_number" autocomplete="off" inputmode="numeric">
+          </div>
+          <div class="form-group">
+            <label>Name on Payout Account</label>
+            <input type="text" id="kyc-payout_account_name" autocomplete="off">
+            <div class="field-hint">Must match your ID and KRA PIN holder name.</div>
+          </div>
+        </div>
+        <div class="field-hint" id="kycAgreement"></div>
+        <div class="save-row">
+          <button type="submit" class="btn btn-primary" id="saveKycBtn">Save Details</button>
+        </div>
+      </form>
+    </div>
+
     <!-- Payout Details -->
-    <div class="panel">
+    <div class="panel" id="payoutPanel">
       <div class="section-heading">Payout Details</div>
+      <div id="payoutLockNote" class="kyc-lock-note locked" style="display:none;"></div>
       <div class="form-row" style="margin-bottom:1rem;">
         <div class="form-group">
           <label>Preferred Payment Method</label>
@@ -171,6 +264,40 @@
       </form>
     </div>
 
+    <!-- Delete Account -->
+    <div class="panel danger-panel">
+      <div class="section-heading">Delete Account</div>
+      <p class="mini-note" style="margin-top:0;">
+        This permanently deletes your brand account, products, verification and payout details, and riders.
+        Paid orders are kept in anonymised form so buyers' purchase history and MerchMarket's financial records stay intact.
+        You can only delete your account once all confirmed orders are completed and any funds held for you have been released. This cannot be undone.
+      </p>
+      <div id="deleteStart"><button type="button" class="btn btn-secondary" id="startDeleteBtn" style="color:#f44336;border-color:rgba(244,67,54,.5);">Delete my account…</button></div>
+      <div id="deleteFlow" style="display:none;">
+        <div id="deleteBlockers" class="kyc-lock-note locked" style="display:none;"></div>
+        <div id="deleteConfirmBox" style="display:none;">
+          <div id="deleteUnpaidNote" class="field-hint" style="margin-bottom:1rem;"></div>
+          <div class="field-row">
+            <div class="form-group">
+              <label>Your Password</label>
+              <input type="password" id="deletePassword" autocomplete="current-password">
+            </div>
+            <div class="form-group">
+              <label>Type DELETE to confirm</label>
+              <input type="text" id="deleteConfirmText" autocomplete="off" autocapitalize="characters">
+            </div>
+          </div>
+          <div class="save-row">
+            <button type="button" class="btn btn-secondary" id="cancelDeleteBtn">Cancel</button>
+            <button type="button" class="btn btn-primary" id="confirmDeleteBtn" style="background:#c62828;">Permanently delete account</button>
+          </div>
+        </div>
+        <div class="save-row" id="deleteCloseRow" style="display:none;">
+          <button type="button" class="btn btn-secondary" id="closeDeleteBtn">Close</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </main>
 
@@ -234,6 +361,7 @@
     document.getElementById('pm-instructions').value   = d.deliveryInstructions || '';
 
     wirePaymentMethodSwitcher();
+    applyPayoutLock(payload);
   }
 
   async function savePaymentDetails() {
@@ -359,6 +487,189 @@
     showToast('Password updated successfully!', 'success');
   });
 
+  /* ─── Payout details lock (same 42h window as the verification panel) ─── */
+
+  function applyPayoutLock(payload) {
+    if (!payload || !payload.locked) return;
+    document.querySelectorAll('#payoutPanel input, #payoutPanel select, #payoutPanel textarea')
+      .forEach(el => { el.disabled = true; });
+    const btn = document.getElementById('save-payment-details');
+    if (btn) btn.style.display = 'none';
+    const note = document.getElementById('payoutLockNote');
+    note.textContent = '🔒 Payout details are locked to protect your account from fraud. Contact MerchMarket support if something needs correcting.';
+    note.style.display = 'block';
+  }
+
+  /* ─── Verification & Business Details ─── */
+
+  const KYC_FIELDS = ['business_type', 'kra_pin', 'contact_person', 'phone', 'product_category',
+                      'payout_method', 'payout_bank_name', 'payout_account_number', 'payout_account_name'];
+  const KYC_STATUS_LABEL = {
+    pending: 'Pending review', documents_submitted: 'Documents submitted', under_review: 'Under review',
+    approved: 'Approved', rejected: 'Rejected', suspended: 'Suspended'
+  };
+  const kycEl = f => document.getElementById('kyc-' + f);
+
+  function toggleKycBank() {
+    document.getElementById('kycBankWrap').style.display = kycEl('payout_method').value === 'bank' ? '' : 'none';
+  }
+
+  function describeTimeLeft(iso) {
+    const ms = new Date(iso).getTime() - Date.now();
+    if (ms <= 0) return '';
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    return h >= 1 ? `${h}h ${m}m` : `${m} minutes`;
+  }
+
+  async function loadKycSection() {
+    const res = await fetch('/api/brand/kyc', { headers: await getAuthHeader() });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) { console.error('loadKycSection error:', payload.error || res.statusText); return; }
+
+    const k = payload.kyc || {};
+    const lockedFields = payload.locked_fields || [];
+    KYC_FIELDS.forEach(f => {
+      const el = kycEl(f);
+      el.value = k[f] || '';
+      // Locked fields stay editable if still empty (nothing to protect yet).
+      el.disabled = !!(payload.locked && lockedFields.includes(f) && k[f]);
+    });
+    toggleKycBank();
+
+    const status = k.status || 'pending';
+    const badge = document.getElementById('kycStatusBadge');
+    badge.textContent = KYC_STATUS_LABEL[status] || status;
+    badge.className = 'kyc-badge ' + status;
+
+    const note = document.getElementById('kycLockNote');
+    note.className = 'kyc-lock-note';
+    if (payload.locked) {
+      note.classList.add('locked');
+      note.textContent = '🔒 Business type, KRA PIN, goods/services declaration and payout details are locked to protect your account from fraud. Contact MerchMarket support if something needs correcting. You can still update your contact person and phone.';
+    } else if (status === 'rejected') {
+      note.textContent = 'Your application was not approved' + (k.status_reason ? ': ' + k.status_reason : '.') + ' Correct your details below and save to resubmit.';
+    } else if (payload.lock_at) {
+      const left = describeTimeLeft(payload.lock_at);
+      note.textContent = `You can review and correct these details for ${left} (until ${new Date(payload.lock_at).toLocaleString()}). After that, business type, KRA PIN, goods/services declaration and payout details are locked to prevent fraud.`;
+    } else {
+      note.textContent = 'Complete your verification details below.';
+    }
+    note.style.display = 'block';
+
+    document.getElementById('kycAgreement').textContent = k.agreement_accepted_at
+      ? `Vendor Agreement accepted (${k.agreement_version || 'version not recorded'}) on ${new Date(k.agreement_accepted_at).toLocaleDateString()}.`
+      : '';
+  }
+
+  document.getElementById('kyc-payout_method').addEventListener('change', toggleKycBank);
+
+  document.getElementById('kycForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('saveKycBtn');
+    const body = {};
+    KYC_FIELDS.forEach(f => { if (!kycEl(f).disabled) body[f] = kycEl(f).value.trim(); });
+    if (body.kra_pin) body.kra_pin = body.kra_pin.toUpperCase();
+
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = 'Saving…';
+    try {
+      const res = await fetch('/api/brand/kyc', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
+        body: JSON.stringify(body)
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(payload.error || 'Failed to save details.', 'error');
+        if (payload.code === 'KYC_LOCKED') await loadKycSection();
+        return;
+      }
+      showToast(payload.unchanged ? 'No changes to save.' : 'Details saved!', 'success');
+      await loadKycSection();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  });
+
+  /* ─── Delete account ─── */
+
+  const delEl = id => document.getElementById(id);
+
+  function resetDeleteFlow() {
+    delEl('deleteFlow').style.display = 'none';
+    delEl('deleteStart').style.display = '';
+    delEl('deleteBlockers').style.display = 'none';
+    delEl('deleteConfirmBox').style.display = 'none';
+    delEl('deleteCloseRow').style.display = 'none';
+    delEl('deletePassword').value = '';
+    delEl('deleteConfirmText').value = '';
+  }
+
+  delEl('startDeleteBtn').addEventListener('click', async () => {
+    const btn = delEl('startDeleteBtn');
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/brand/account/deletion-check', { headers: await getAuthHeader() });
+      const info = await res.json().catch(() => ({}));
+      if (!res.ok) { showToast(info.error || 'Could not check your account.', 'error'); return; }
+
+      delEl('deleteStart').style.display = 'none';
+      delEl('deleteFlow').style.display = 'block';
+
+      if (!info.canDelete) {
+        const parts = [];
+        if (info.open_orders) parts.push(`${info.open_orders} confirmed order(s) not yet completed`);
+        if (info.unsettled_funds) parts.push(`${info.unsettled_funds} payment(s) still held or awaiting release to you`);
+        const box = delEl('deleteBlockers');
+        box.textContent = 'You can’t delete your account yet: ' + parts.join(' and ') + '. Complete or settle these first, then come back.';
+        box.style.display = 'block';
+        delEl('deleteCloseRow').style.display = 'flex';
+        return;
+      }
+      delEl('deleteUnpaidNote').textContent = info.unpaid_orders
+        ? `${info.unpaid_orders} unpaid order(s) will be cancelled and removed.` : '';
+      delEl('deleteConfirmBox').style.display = 'block';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  delEl('cancelDeleteBtn').addEventListener('click', resetDeleteFlow);
+  delEl('closeDeleteBtn').addEventListener('click', resetDeleteFlow);
+
+  delEl('confirmDeleteBtn').addEventListener('click', async () => {
+    const password = delEl('deletePassword').value;
+    const confirmText = delEl('deleteConfirmText').value.trim();
+    if (!password) { showToast('Enter your password.', 'error'); return; }
+    if (confirmText !== 'DELETE') { showToast('Type DELETE to confirm.', 'error'); return; }
+
+    const btn = delEl('confirmDeleteBtn');
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = 'Deleting…';
+    try {
+      const res = await fetch('/api/brand/account/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
+        body: JSON.stringify({ password, confirm: confirmText })
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(payload.error || 'Failed to delete account.', 'error');
+        return;
+      }
+      showToast('Your account has been deleted.', 'success');
+      try { clearProfileCache(); await db.auth.signOut(); } catch (e) { /* user no longer exists */ }
+      setTimeout(() => { window.location.href = 'index.html'; }, 1500);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  });
+
   /* ─── Page guard + boot ─── */
 
   (async () => {
@@ -394,6 +705,7 @@
 
       document.getElementById('profileGrid').style.display = 'block';
       await loadBrandDetails();
+      await loadKycSection();
       await loadPaymentsSection();
     } catch (e) {
       console.error('Brand profile guard error:', e);

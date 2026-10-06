@@ -1061,84 +1061,108 @@ async function requireApprovedBrand(req, res, next) {
   }
 }
 
-function cleanKycInput(body = {}) {
-  const str = (v, max = 120) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
-  const kraPin = str(body.kra_pin, 11).toUpperCase();
-  const out = {
-    business_type: str(body.business_type, 20),
-    contact_person: str(body.contact_person),
-    phone: str(body.phone, 20),
-    kra_pin: kraPin,
-    product_category: str(body.product_category, 10),
-    payout_method: str(body.payout_method, 20),
-    payout_account_number: str(body.payout_account_number, 40),
-    payout_account_name: str(body.payout_account_name),
-    payout_bank_name: str(body.payout_bank_name)
-  };
+// Business, tax and payout details are fraud-sensitive: editable for 42h after
+// the vendor_kyc row is created (signup), then locked. Locked fields can still be
+// filled in if they are empty, and a rejected application can always be fixed.
+const KYC_EDIT_WINDOW_HOURS = 42;
+const KYC_FREE_FIELDS = ['contact_person', 'phone'];
+const KYC_LOCKED_FIELDS = [
+  'business_type', 'kra_pin', 'product_category',
+  'payout_method', 'payout_account_number', 'payout_account_name', 'payout_bank_name'
+];
+const KYC_VALIDATORS = {
+  business_type: v => KYC_BUSINESS_TYPES.includes(v) ? null : 'Choose a business type.',
+  contact_person: v => v ? null : 'Contact person is required.',
+  phone: v => /^(\+?254|0)[17][0-9]{8}$/.test(v) ? null : 'Enter a valid Kenyan phone number.',
+  kra_pin: v => KRA_PIN_RE.test(v) ? null : 'KRA PIN must look like A123456789Z.',
+  product_category: v => KYC_CATEGORIES.includes(v) ? null : 'Choose a product category.',
+  payout_method: v => KYC_PAYOUT_METHODS.includes(v) ? null : 'Choose a payout method.',
+  payout_account_number: v => v ? null : 'Payout number is required.',
+  payout_account_name: v => v ? null : 'Payout account name is required.',
+  payout_bank_name: () => null
+};
 
-  if (!KYC_BUSINESS_TYPES.includes(out.business_type)) return { error: 'Choose a business type.' };
-  if (!out.contact_person) return { error: 'Contact person is required.' };
-  if (!/^(\+?254|0)[17][0-9]{8}$/.test(out.phone.replace(/[\s-]/g, ''))) return { error: 'Enter a valid Kenyan phone number.' };
-  if (!KRA_PIN_RE.test(out.kra_pin)) return { error: 'KRA PIN must look like A123456789Z.' };
-  if (!KYC_CATEGORIES.includes(out.product_category)) return { error: 'Choose a product category.' };
-  if (!KYC_PAYOUT_METHODS.includes(out.payout_method)) return { error: 'Choose a payout method.' };
-  if (!out.payout_account_number) return { error: 'Payout number is required.' };
-  if (!out.payout_account_name) return { error: 'Payout account name is required.' };
-  if (out.payout_method === 'bank' && !out.payout_bank_name) return { error: 'Bank name is required for bank payouts.' };
-  if (out.payout_method !== 'bank') out.payout_bank_name = '';
+function normalizeKycValue(key, raw) {
+  let v = typeof raw === 'string' ? raw.trim() : '';
+  if (key === 'kra_pin') return v.toUpperCase().slice(0, 11);
+  if (key === 'phone') return v.replace(/[\s-]/g, '').slice(0, 20);
+  return v.slice(0, 120);
+}
 
-  out.phone = out.phone.replace(/[\s-]/g, '');
-  out.payout_bank_name = out.payout_bank_name || null;
-  return { value: out };
+async function getKycState(admin, brandId) {
+  const { data, error } = await admin.from('vendor_kyc').select('*').eq('brand_id', brandId).maybeSingle();
+  if (error) throw error;
+  if (!data) return { row: null, locked: false, lockAt: null };
+  const lockAt = new Date(new Date(data.created_at).getTime() + KYC_EDIT_WINDOW_HOURS * 3600 * 1000);
+  const locked = Date.now() >= lockAt.getTime() && data.status !== 'rejected';
+  return { row: data, locked, lockAt: lockAt.toISOString() };
 }
 
 app.get('/api/brand/kyc', requireAuth, requireBrand, async (req, res) => {
   try {
-    const { data, error } = await req.supabase
-      .from('vendor_kyc')
-      .select('*')
-      .eq('brand_id', req.brandProfile.id)
-      .maybeSingle();
-    if (error) throw error;
-    res.json({ kyc: data });
+    const { row, locked, lockAt } = await getKycState(createSupabaseServiceClient(), req.brandProfile.id);
+    res.json({
+      kyc: row,
+      locked,
+      lock_at: lockAt,
+      edit_window_hours: KYC_EDIT_WINDOW_HOURS,
+      locked_fields: KYC_LOCKED_FIELDS
+    });
   } catch (e) {
     res.status(500).json({ error: 'Failed to load verification details', details: e.message });
   }
 });
 
-// Brands can edit their application only while it is pending or rejected.
-// Writes use the service client: vendor_kyc has no browser write policies on purpose.
 app.put('/api/brand/kyc', requireAuth, requireBrand, async (req, res) => {
   try {
-    const parsed = cleanKycInput(req.body);
-    if (parsed.error) return res.status(400).json({ error: parsed.error });
-
     const admin = createSupabaseServiceClient();
-    const { data: current, error: curErr } = await admin
-      .from('vendor_kyc')
-      .select('status')
-      .eq('brand_id', req.brandProfile.id)
-      .maybeSingle();
-    if (curErr) throw curErr;
+    const { row, locked } = await getKycState(admin, req.brandProfile.id);
+    const body = req.body || {};
+    const updates = {};
 
-    const status = current?.status || 'pending';
-    if (!['pending', 'rejected'].includes(status)) {
-      return res.status(409).json({ error: 'Your details can no longer be edited here. Contact support to change them.' });
+    for (const key of [...KYC_FREE_FIELDS, ...KYC_LOCKED_FIELDS]) {
+      if (!(key in body)) continue;
+      const value = normalizeKycValue(key, body[key]);
+      const current = row?.[key] ?? null;
+      if ((current ?? '') === value) continue; // unchanged
+
+      if (KYC_LOCKED_FIELDS.includes(key) && locked && current) {
+        return res.status(403).json({
+          error: 'Business, tax and payout details can no longer be changed here. Contact MerchMarket support if something is wrong.',
+          code: 'KYC_LOCKED',
+          field: key
+        });
+      }
+      if (value || KYC_FREE_FIELDS.includes(key) || key !== 'payout_bank_name') {
+        const msg = KYC_VALIDATORS[key](value);
+        if (msg) return res.status(400).json({ error: msg, field: key });
+      }
+      updates[key] = value || null;
     }
 
-    const row = {
+    const merged = { ...(row || {}), ...updates };
+    if (merged.payout_method === 'bank' && !merged.payout_bank_name) {
+      return res.status(400).json({ error: 'Bank name is required for bank payouts.', field: 'payout_bank_name' });
+    }
+    if (merged.payout_method && merged.payout_method !== 'bank' && merged.payout_bank_name) {
+      updates.payout_bank_name = null;
+    }
+    if ('kra_pin' in updates) updates.kra_pin_verified_at = null;
+
+    if (!Object.keys(updates).length) return res.json({ ok: true, unchanged: true });
+
+    const resubmit = !row || row.status === 'rejected';
+    const { error } = await admin.from('vendor_kyc').upsert({
       brand_id: req.brandProfile.id,
-      ...parsed.value,
-      status: 'pending',          // a resubmission after rejection goes back into the queue
-      status_reason: null,
+      ...updates,
+      ...(resubmit ? { status: 'pending', status_reason: null } : {}),
       updated_at: new Date().toISOString()
-    };
-    const { error } = await admin.from('vendor_kyc').upsert(row, { onConflict: 'brand_id' });
+    }, { onConflict: 'brand_id' });
     if (error) {
-      if (error.code === '23505') return res.status(409).json({ error: 'That KRA PIN is already registered to another vendor.' });
+      if (error.code === '23505') return res.status(409).json({ error: 'That KRA PIN is already registered to another vendor.', field: 'kra_pin' });
       throw error;
     }
-    res.json({ ok: true, status: 'pending' });
+    res.json({ ok: true, status: resubmit ? 'pending' : row.status });
   } catch (e) {
     res.status(500).json({ error: 'Failed to save verification details', details: e.message });
   }
@@ -1275,16 +1299,34 @@ app.get('/api/brand/payments', requireAuth, requireBrand, async (req, res) => {
       .maybeSingle();
 
     if (error) throw error;
-    res.json({ payments: data });
+    const { locked, lockAt } = await getKycState(createSupabaseServiceClient(), req.brandProfile.id);
+    res.json({ payments: data, locked: !!(locked && data), lock_at: lockAt });
   } catch (e) {
     res.status(500).json({ error: 'Failed to load payment details', details: e.message });
   }
 });
 
+// Payout details follow the same 42h window as the KYC payout fields; otherwise
+// they would be a way around the lock. Writes go through the service client
+// (the browser write policies are removed at deploy time).
 app.post('/api/brand/payments', requireAuth, requireBrand, async (req, res) => {
   try {
+    const admin = createSupabaseServiceClient();
+    const { locked } = await getKycState(admin, req.brandProfile.id);
+    if (locked) {
+      const { data: existing, error: exErr } = await admin
+        .from('vendor_payments').select('id').eq('brand_id', req.brandProfile.id).maybeSingle();
+      if (exErr) throw exErr;
+      if (existing) {
+        return res.status(403).json({
+          error: 'Payout details can no longer be changed here. Contact MerchMarket support if something is wrong.',
+          code: 'PAYOUT_LOCKED'
+        });
+      }
+    }
+
     const { method, label, details } = req.body || {};
-    const { error } = await req.supabase
+    const { error } = await admin
       .from('vendor_payments')
       .upsert({
         brand_id: req.brandProfile.id,
@@ -1297,7 +1339,114 @@ app.post('/api/brand/payments', requireAuth, requireBrand, async (req, res) => {
     if (error) throw error;
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: 'Failed to save payment details', details: e.message });
+    res.status(500).json({ error: 'Failed to save payout details', details: e.message });
+  }
+});
+
+// -------- Brand account deletion --------
+function storagePathFromUrl(url) {
+  if (typeof url !== 'string') return null;
+  const part = url.split('/product-images/')[1];
+  return part ? decodeURIComponent(part.split('?')[0]) : null;
+}
+
+// Removes the brand's uploaded images except those still used by archived
+// products (kept because paid orders reference them).
+async function purgeBrandImages(admin, brandId) {
+  const { data: kept, error } = await admin
+    .from('products').select('images').eq('brand_id', brandId).not('archived_at', 'is', null);
+  if (error) throw error;
+
+  const keep = new Set();
+  for (const p of kept || []) {
+    for (const img of Array.isArray(p.images) ? p.images : []) {
+      if (typeof img === 'string') { const sp = storagePathFromUrl(img); if (sp) keep.add(sp); continue; }
+      if (img && typeof img === 'object') {
+        if (img.path) keep.add(img.path);
+        const sp = storagePathFromUrl(img.url || img.image);
+        if (sp) keep.add(sp);
+      }
+    }
+  }
+
+  const bucket = admin.storage.from('product-images');
+  const toRemove = [];
+  for (let offset = 0; ; offset += 100) {
+    const { data: files, error: listErr } = await bucket.list(brandId, { limit: 100, offset });
+    if (listErr) throw listErr;
+    if (!files || !files.length) break;
+    for (const f of files) {
+      const path = `${brandId}/${f.name}`;
+      if (!keep.has(path)) toRemove.push(path);
+    }
+    if (files.length < 100) break;
+  }
+  for (let i = 0; i < toRemove.length; i += 100) {
+    const { error: rmErr } = await bucket.remove(toRemove.slice(i, i + 100));
+    if (rmErr) throw rmErr;
+  }
+  return toRemove.length;
+}
+
+app.get('/api/brand/account/deletion-check', requireAuth, requireBrand, async (req, res) => {
+  try {
+    const { data, error } = await createSupabaseServiceClient()
+      .rpc('brand_deletion_blockers', { p_brand: req.brandProfile.id });
+    if (error) throw error;
+    res.json({
+      canDelete: data.open_orders === 0 && data.unsettled_funds === 0,
+      open_orders: data.open_orders,
+      unsettled_funds: data.unsettled_funds,
+      unpaid_orders: data.unpaid_orders
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to check account status', details: e.message });
+  }
+});
+
+app.post('/api/brand/account/delete', requireAuth, requireBrand, async (req, res) => {
+  try {
+    const { password, confirm } = req.body || {};
+    if (confirm !== 'DELETE') return res.status(400).json({ error: 'Type DELETE to confirm.' });
+    if (!password || !req.user?.email) return res.status(400).json({ error: 'Enter your password to confirm.' });
+
+    // Re-authenticate: a stolen session alone must not be able to wipe an account.
+    const { error: pwError } = await createSupabaseClient().auth.signInWithPassword({
+      email: req.user.email,
+      password
+    });
+    if (pwError) return res.status(401).json({ error: 'Incorrect password.' });
+
+    const admin = createSupabaseServiceClient();
+    const brandId = req.brandProfile.id;
+
+    const { data: summary, error } = await admin.rpc('delete_brand_account_data', { p_brand: brandId });
+    if (error) {
+      if (/BRAND_DELETION_BLOCKED/.test(error.message)) {
+        return res.status(409).json({
+          error: 'You still have confirmed orders in progress or funds awaiting release. Complete or settle them first.',
+          code: 'BRAND_DELETION_BLOCKED'
+        });
+      }
+      throw error;
+    }
+
+    let imagesRemoved = null;
+    try { imagesRemoved = await purgeBrandImages(admin, brandId); }
+    catch (e) { console.error('brand image cleanup failed for', brandId, e.message); }
+
+    const { error: authError } = await admin.auth.admin.deleteUser(brandId);
+    if (authError) {
+      console.error('brand auth deletion failed for', brandId, authError.message);
+      return res.status(500).json({
+        error: 'Your data was removed but we could not close your login. Please contact MerchMarket support.',
+        summary
+      });
+    }
+
+    res.json({ ok: true, summary: { ...summary, images_removed: imagesRemoved } });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to delete account', details: e.message });
   }
 });
 
