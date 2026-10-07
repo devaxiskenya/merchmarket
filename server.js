@@ -1593,6 +1593,23 @@ app.get('/product.html', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'produ
 app.get('/cart.html', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'cart.html')));
 app.get('/orders.html', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'orders.html')));
 
+// Non-HTML files (JS, CSS, images, fonts, JSON...) are only served to the page
+// that loads them. A browser sets Sec-Fetch-Dest: document when someone types the
+// URL or opens it in a tab, so that request gets a 404. Pages still load their own
+// assets normally (dest: script, style, image, font...). This stops casual
+// browsing of the files, not a determined reader: code a browser runs can always
+// be read from dev tools, so nothing secret may ever live in these files.
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  if (!/\.[a-z0-9]+$/i.test(req.path) || /\.html?$/i.test(req.path)) return next();
+  res.setHeader('Vary', 'Sec-Fetch-Dest');
+  const dest = (req.get('sec-fetch-dest') || '').toLowerCase();
+  if (['document', 'iframe', 'frame', 'embed', 'object'].includes(dest)) {
+    return res.status(404).send('Not found');
+  }
+  next();
+});
+
 // Never serve source, migrations or project metadata from the static root.
 app.use((req, res, next) => {
   if (/^\/(server\.js|package(-lock)?\.json|vercel\.json|TODO\.md|README\.md|CNAME|migrations(\/|$))/i.test(req.path) ||
