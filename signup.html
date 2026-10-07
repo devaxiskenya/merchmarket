@@ -189,6 +189,39 @@
       transform: none;
     }
 
+    /* ── Brand KYC fields ───────────────────────────────────── */
+    .kyc-heading {
+      margin: 1.2rem 0 .7rem;
+      color: var(--accent-light);
+      font-family: 'Syne', sans-serif;
+      font-size: .8rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .auth-field select {
+      width: 100%;
+      padding: .85rem 1.1rem;
+      border: 1px solid var(--border-brand);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, .05);
+      color: #fff;
+      font-family: 'DM Sans', sans-serif;
+      font-size: .95rem;
+    }
+    .auth-field select option { color: #111; }
+    .kyc-agree {
+      display: flex;
+      gap: .6rem;
+      align-items: flex-start;
+      margin: 1rem 0 .4rem;
+      color: var(--text-secondary);
+      font-size: .82rem;
+      line-height: 1.5;
+      cursor: pointer;
+    }
+    .kyc-agree input { margin-top: .2rem; flex-shrink: 0; }
+    .kyc-note { color: #777; font-size: .78rem; line-height: 1.5; margin: 0 0 1rem; }
     /* ── Back link ──────────────────────────────────────────── */
     .back-link {
       display: inline-flex;
@@ -324,7 +357,7 @@
 
       <div class="auth-heading">
         <h1>Brand Sign Up</h1>
-        <p>Start selling your designs today</p>
+        <p>Apply to sell on MerchMarket</p>
       </div>
 
       <div class="brand-perks">
@@ -351,6 +384,61 @@
                  required autocomplete="new-password" minlength="8">
         </div>
 
+        <div class="kyc-heading">Business details</div>
+        <div class="auth-field">
+          <select id="brandBusinessType" required>
+            <option value="">Business type</option>
+            <option value="sole_trader">Sole trader / individual</option>
+            <option value="company">Registered company</option>
+          </select>
+        </div>
+        <div class="auth-field">
+          <input type="text" id="brandContact" placeholder="Contact person (full name)"
+                 required autocomplete="name">
+        </div>
+        <div class="auth-field">
+          <input type="tel" id="brandPhone" placeholder="Phone (e.g. 0712 345 678)"
+                 required autocomplete="tel" inputmode="tel">
+        </div>
+        <div class="auth-field">
+          <input type="text" id="brandKraPin" placeholder="KRA PIN (e.g. A123456789Z)"
+                 required maxlength="11" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        </div>
+        <div class="auth-field">
+          <select id="brandCategory" required>
+            <option value="">What do you sell?</option>
+            <option value="goods">Goods (physical products)</option>
+            <option value="services">Services</option>
+            <option value="both">Both goods and services</option>
+          </select>
+        </div>
+
+        <div class="kyc-heading">Payout details</div>
+        <div class="auth-field">
+          <select id="brandPayoutMethod" required>
+            <option value="">Payout method</option>
+            <option value="mpesa_till">M-Pesa Till (Buy Goods)</option>
+            <option value="mpesa_paybill">M-Pesa Paybill</option>
+            <option value="bank">Bank account</option>
+          </select>
+        </div>
+        <div class="auth-field" id="brandBankNameWrap" style="display:none;">
+          <input type="text" id="brandBankName" placeholder="Bank name (e.g. KCB)">
+        </div>
+        <div class="auth-field">
+          <input type="text" id="brandPayoutNumber" placeholder="Till / Paybill / Account number"
+                 required autocomplete="off" inputmode="numeric">
+        </div>
+        <div class="auth-field">
+          <input type="text" id="brandPayoutName" placeholder="Name on the account (must match your ID and KRA PIN)"
+                 required autocomplete="off">
+        </div>
+
+        <label class="kyc-agree">
+          <input type="checkbox" id="brandAgree" required>
+          <span>I agree to the MerchMarket Vendor Agreement, including commission, withholding tax, payout timing, intellectual property and liability terms.</span>
+        </label>
+        <p class="kyc-note">Your account will be reviewed before you can list products. We'll ask for your ID and other documents later.</p>
         <div class="auth-error" id="brandError"></div>
 
         <button type="submit" class="auth-submit" id="brandBtn">
@@ -495,14 +583,38 @@
       }
 
       // ── brand submit ───────────────────────────────────────── //
+      const AGREEMENT_VERSION = 'vendor-agreement-v1-2026-10';
+      const KRA_PIN_RE = /^[AP][0-9]{9}[A-Z]$/;
+      const KE_PHONE_RE = /^(\+?254|0)[17][0-9]{8}$/;
+
+      function val(id) { return document.getElementById(id).value.trim(); }
+
+      function togglePayoutFields() {
+        const isBank = document.getElementById('brandPayoutMethod').value === 'bank';
+        document.getElementById('brandBankNameWrap').style.display = isBank ? '' : 'none';
+        document.getElementById('brandPayoutNumber').placeholder =
+          isBank ? 'Bank account number' : 'Till / Paybill number';
+      }
+
       async function handleBrand(e) {
         e.preventDefault();
         showError('brandError', '');
-
-        const name     = document.getElementById('brandName').value.trim();
-        const email    = document.getElementById('brandEmail').value.trim();
+        const name     = val('brandName');
+        const email    = val('brandEmail');
         const password = document.getElementById('brandPassword').value;
         const confirm  = document.getElementById('brandConfirm').value;
+
+        const kyc = {
+          business_type:         val('brandBusinessType'),
+          contact_person:        val('brandContact'),
+          phone:                 val('brandPhone').replace(/[\s-]/g, ''),
+          kra_pin:               val('brandKraPin').toUpperCase(),
+          product_category:      val('brandCategory'),
+          payout_method:         val('brandPayoutMethod'),
+          payout_account_number: val('brandPayoutNumber'),
+          payout_account_name:   val('brandPayoutName'),
+          payout_bank_name:      val('brandBankName')
+        };
 
         if (!name || !email || !password || !confirm) {
           showError('brandError', 'Please fill in all fields.');
@@ -516,11 +628,27 @@
           showError('brandError', 'Password must be at least 8 characters.');
           return;
         }
+        if (!kyc.business_type)    { showError('brandError', 'Choose your business type.'); return; }
+        if (!kyc.contact_person)   { showError('brandError', 'Enter a contact person.'); return; }
+        if (!KE_PHONE_RE.test(kyc.phone)) { showError('brandError', 'Enter a valid Kenyan phone number.'); return; }
+        if (!KRA_PIN_RE.test(kyc.kra_pin)) { showError('brandError', 'KRA PIN must look like A123456789Z.'); return; }
+        if (!kyc.product_category) { showError('brandError', 'Tell us whether you sell goods, services or both.'); return; }
+        if (!kyc.payout_method)    { showError('brandError', 'Choose a payout method.'); return; }
+        if (kyc.payout_method === 'bank' && !kyc.payout_bank_name) { showError('brandError', 'Enter your bank name.'); return; }
+        if (!kyc.payout_account_number) { showError('brandError', 'Enter your payout number.'); return; }
+        if (!kyc.payout_account_name)   { showError('brandError', 'Enter the name on the payout account.'); return; }
+        if (!document.getElementById('brandAgree').checked) {
+          showError('brandError', 'You must accept the Vendor Agreement to continue.');
+          return;
+        }
+        if (kyc.payout_method !== 'bank') kyc.payout_bank_name = '';
 
         setLoading('brandBtn', true, 'CREATE BRAND ACCOUNT');
-
         try {
-          const result = await createAccount('brand', name, email, password);
+          const result = await createAccount('brand', name, email, password, {
+            ...kyc,
+            agreement_version: AGREEMENT_VERSION
+          });
           if (result?.pending) {
             _pendingEmail = email;
             _pendingType  = 'brand';
@@ -545,6 +673,7 @@
 
         document.getElementById('memberForm').addEventListener('submit', handleMember);
         document.getElementById('brandForm').addEventListener('submit', handleBrand);
+        document.getElementById('brandPayoutMethod').addEventListener('change', togglePayoutFields);
       }
 
       // ── resend ────────────────────────────────────────────────── //

@@ -257,7 +257,7 @@ app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
   res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2 https://cdn.jsdelivr.net/npm/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com https://fonts.googleapis.com data:; img-src 'self' data: https:; connect-src 'self' https://omyzcnizwxumvookotsy.supabase.co https://*.supabase.co wss://*.supabase.co; frame-ancestors 'none'; object-src 'none'; base-uri 'self';");
 
-  const isSensitivePage = ['brandflow.html', 'brand-profile.html', 'add-item.html', 'view-order.html', 'profile.html', 'orders.html', 'wishlist.html', 'cart.html', 'login.html', 'signup.html', 'verify.html'].some(page => req.path.endsWith(page));
+  const isSensitivePage = ['brandflow.html', 'brand-profile.html', 'admin-vendors.html', 'add-item.html', 'view-order.html', 'profile.html', 'orders.html', 'wishlist.html', 'cart.html', 'login.html', 'signup.html', 'verify.html'].some(page => req.path.endsWith(page));
   if (isSensitivePage) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     res.setHeader('Pragma', 'no-cache');
@@ -1021,7 +1021,161 @@ function cleanVariants(rawVariants) {
     .filter(v => v.size_label && Number.isFinite(v.stock) && v.stock >= 0);
 }
 
-app.post('/api/brand/products', requireAuth, requireBrand, async (req, res) => {
+// -------- Vendor KYC (spec section 7) --------
+const KRA_PIN_RE = /^[AP][0-9]{9}[A-Z]$/;
+const KYC_BUSINESS_TYPES = ['sole_trader', 'company'];
+const KYC_CATEGORIES = ['goods', 'services', 'both'];
+const KYC_PAYOUT_METHODS = ['mpesa_till', 'mpesa_paybill', 'bank'];
+
+const KYC_STATUS_MESSAGES = {
+  pending: 'Your brand account is pending approval. You can list products once MerchMarket has reviewed and approved it.',
+  documents_submitted: 'Your documents are being checked. You can list products once your account is approved.',
+  under_review: 'Your brand account is under review. You can list products once it is approved.',
+  rejected: 'Your brand application was not approved. Update your details on the Profile page and resubmit.',
+  suspended: 'Your brand account is suspended. Contact MerchMarket support to resolve this.'
+};
+
+// Blocks listing/editing products until the brand's vendor_kyc.status is 'approved'.
+async function requireApprovedBrand(req, res, next) {
+  try {
+    const { data, error } = await req.supabase
+      .from('vendor_kyc')
+      .select('status, status_reason')
+      .eq('brand_id', req.brandProfile.id)
+      .maybeSingle();
+    if (error) throw error;
+
+    const status = data?.status || 'pending';
+    if (status !== 'approved') {
+      res.status(403).json({
+        error: KYC_STATUS_MESSAGES[status] || KYC_STATUS_MESSAGES.pending,
+        code: 'BRAND_NOT_APPROVED',
+        status,
+        reason: data?.status_reason || null
+      });
+      return;
+    }
+    next();
+  } catch (e) {
+    res.status(500).json({ error: 'Could not verify brand approval status', details: e.message });
+  }
+}
+
+// Business, tax and payout details are fraud-sensitive: editable for 42h after
+// the vendor_kyc row is created (signup), then locked. Locked fields can still be
+// filled in if they are empty, and a rejected application can always be fixed.
+const KYC_EDIT_WINDOW_HOURS = 42;
+const KYC_FREE_FIELDS = ['contact_person', 'phone'];
+const KYC_LOCKED_FIELDS = [
+  'business_type', 'kra_pin', 'product_category',
+  'payout_method', 'payout_account_number', 'payout_account_name', 'payout_bank_name'
+];
+const KYC_VALIDATORS = {
+  business_type: v => KYC_BUSINESS_TYPES.includes(v) ? null : 'Choose a business type.',
+  contact_person: v => v ? null : 'Contact person is required.',
+  phone: v => /^(\+?254|0)[17][0-9]{8}$/.test(v) ? null : 'Enter a valid Kenyan phone number.',
+  kra_pin: v => KRA_PIN_RE.test(v) ? null : 'KRA PIN must look like A123456789Z.',
+  product_category: v => KYC_CATEGORIES.includes(v) ? null : 'Choose a product category.',
+  payout_method: v => KYC_PAYOUT_METHODS.includes(v) ? null : 'Choose a payout method.',
+  payout_account_number: v => v ? null : 'Payout number is required.',
+  payout_account_name: v => v ? null : 'Payout account name is required.',
+  payout_bank_name: () => null
+};
+
+function normalizeKycValue(key, raw) {
+  let v = typeof raw === 'string' ? raw.trim() : '';
+  if (key === 'kra_pin') return v.toUpperCase().slice(0, 11);
+  if (key === 'phone') return v.replace(/[\s-]/g, '').slice(0, 20);
+  return v.slice(0, 120);
+}
+
+async function getKycState(admin, brandId) {
+  const { data, error } = await admin.from('vendor_kyc').select('*').eq('brand_id', brandId).maybeSingle();
+  if (error) throw error;
+  if (!data) return { row: null, locked: false, lockAt: null };
+  const lockAt = new Date(new Date(data.created_at).getTime() + KYC_EDIT_WINDOW_HOURS * 3600 * 1000);
+  const reopenedUntil = data.reopened_until ? new Date(data.reopened_until) : null;
+  const reopened = !!(reopenedUntil && reopenedUntil.getTime() > Date.now());
+  const locked = Date.now() >= lockAt.getTime() && data.status !== 'rejected' && !reopened;
+  return {
+    row: data, locked, lockAt: lockAt.toISOString(),
+    reopenedUntil: reopened ? reopenedUntil.toISOString() : null
+  };
+}
+
+app.get('/api/brand/kyc', requireAuth, requireBrand, async (req, res) => {
+  try {
+    const { row, locked, lockAt, reopenedUntil } = await getKycState(createSupabaseServiceClient(), req.brandProfile.id);
+    if (row) { delete row.reopened_by; delete row.reopen_reason; }
+    res.json({
+      kyc: row,
+      locked,
+      lock_at: lockAt,
+      reopened_until: reopenedUntil,
+      edit_window_hours: KYC_EDIT_WINDOW_HOURS,
+      locked_fields: KYC_LOCKED_FIELDS
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to load verification details', details: e.message });
+  }
+});
+
+app.put('/api/brand/kyc', requireAuth, requireBrand, async (req, res) => {
+  try {
+    const admin = createSupabaseServiceClient();
+    const { row, locked } = await getKycState(admin, req.brandProfile.id);
+    const body = req.body || {};
+    const updates = {};
+
+    for (const key of [...KYC_FREE_FIELDS, ...KYC_LOCKED_FIELDS]) {
+      if (!(key in body)) continue;
+      const value = normalizeKycValue(key, body[key]);
+      const current = row?.[key] ?? null;
+      if ((current ?? '') === value) continue; // unchanged
+
+      if (KYC_LOCKED_FIELDS.includes(key) && locked && current) {
+        return res.status(403).json({
+          error: 'Business, tax and payout details can no longer be changed here. Contact MerchMarket support if something is wrong.',
+          code: 'KYC_LOCKED',
+          field: key
+        });
+      }
+      if (value || KYC_FREE_FIELDS.includes(key) || key !== 'payout_bank_name') {
+        const msg = KYC_VALIDATORS[key](value);
+        if (msg) return res.status(400).json({ error: msg, field: key });
+      }
+      updates[key] = value || null;
+    }
+
+    const merged = { ...(row || {}), ...updates };
+    if (merged.payout_method === 'bank' && !merged.payout_bank_name) {
+      return res.status(400).json({ error: 'Bank name is required for bank payouts.', field: 'payout_bank_name' });
+    }
+    if (merged.payout_method && merged.payout_method !== 'bank' && merged.payout_bank_name) {
+      updates.payout_bank_name = null;
+    }
+    if ('kra_pin' in updates) updates.kra_pin_verified_at = null;
+
+    if (!Object.keys(updates).length) return res.json({ ok: true, unchanged: true });
+
+    const resubmit = !row || row.status === 'rejected';
+    const { error } = await admin.from('vendor_kyc').upsert({
+      brand_id: req.brandProfile.id,
+      ...updates,
+      ...(resubmit ? { status: 'pending', status_reason: null } : {}),
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'brand_id' });
+    if (error) {
+      if (error.code === '23505') return res.status(409).json({ error: 'That KRA PIN is already registered to another vendor.', field: 'kra_pin' });
+      throw error;
+    }
+    res.json({ ok: true, status: resubmit ? 'pending' : row.status });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to save verification details', details: e.message });
+  }
+});
+
+app.post('/api/brand/products', requireAuth, requireBrand, requireApprovedBrand, async (req, res) => {
   try {
     const { variants: rawVariants, size_specs: rawSizeSpecs, ...rest } = req.body;
     const variants = cleanVariants(rawVariants);
@@ -1065,7 +1219,7 @@ app.post('/api/brand/products', requireAuth, requireBrand, async (req, res) => {
   }
 });
 
-app.put('/api/brand/products/:id', requireAuth, requireBrand, async (req, res) => {
+app.put('/api/brand/products/:id', requireAuth, requireBrand, requireApprovedBrand, async (req, res) => {
   try {
     const { variants: rawVariants, size_specs: rawSizeSpecs, ...rest } = req.body;
     const variants = cleanVariants(rawVariants); // null = field omitted entirely, [] = cleared
@@ -1143,6 +1297,99 @@ app.delete('/api/brand/products/:id', requireAuth, requireBrand, async (req, res
   }
 });
 
+// -------- Admin (vendor review) --------
+// Admins are identified server-side only: an allow-list of verified emails in the
+// ADMIN_EMAILS env var, or app_metadata.role === 'admin' (only settable with the
+// service key). profiles.role is NOT used — users can edit their own profile row.
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
+  .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+
+function requireAdmin(req, res, next) {
+  const u = req.user || {};
+  const email = (u.email || '').toLowerCase();
+  const isAdmin = (u.app_metadata?.role === 'admin') ||
+    (u.email_confirmed_at && ADMIN_EMAILS.includes(email));
+  if (!isAdmin) return res.status(403).json({ error: 'Admin access required.' });
+  next();
+}
+
+app.get('/api/admin/vendors', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const admin = createSupabaseServiceClient();
+    const { data: rows, error } = await admin.from('vendor_kyc').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    const ids = (rows || []).map(r => r.brand_id);
+    const { data: profs, error: pErr } = ids.length
+      ? await admin.from('profiles').select('id, name, email').in('id', ids)
+      : { data: [], error: null };
+    if (pErr) throw pErr;
+    const byId = new Map((profs || []).map(p => [p.id, p]));
+
+    const now = Date.now();
+    res.json({
+      vendors: (rows || []).map(r => {
+        const lockAtMs = new Date(r.created_at).getTime() + KYC_EDIT_WINDOW_HOURS * 3600 * 1000;
+        const reopened = !!(r.reopened_until && new Date(r.reopened_until).getTime() > now);
+        return {
+          ...r,
+          name: byId.get(r.brand_id)?.name || null,
+          email: byId.get(r.brand_id)?.email || null,
+          lock_at: new Date(lockAtMs).toISOString(),
+          editable: now < lockAtMs || reopened || r.status === 'rejected',
+          reopened
+        };
+      })
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to load vendors', details: e.message });
+  }
+});
+
+app.post('/api/admin/vendors/:brandId/reopen', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const hours = Math.min(Math.max(parseInt(req.body?.hours, 10) || 24, 1), 72);
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 300) : '';
+    if (!reason) return res.status(400).json({ error: 'Give a reason for reopening (kept for the audit trail).' });
+
+    const now = new Date();
+    const { data, error } = await createSupabaseServiceClient()
+      .from('vendor_kyc')
+      .update({
+        reopened_until: new Date(now.getTime() + hours * 3600 * 1000).toISOString(),
+        reopened_by: req.user.email,
+        reopen_reason: reason,
+        reopened_at: now.toISOString(),
+        updated_at: now.toISOString()
+      })
+      .eq('brand_id', req.params.brandId)
+      .select('brand_id, reopened_until')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Vendor not found.' });
+    console.log(`[admin] ${req.user.email} reopened vendor ${req.params.brandId} for ${hours}h: ${reason}`);
+    res.json({ ok: true, reopened_until: data.reopened_until });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to reopen vendor details', details: e.message });
+  }
+});
+
+app.post('/api/admin/vendors/:brandId/lock', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await createSupabaseServiceClient()
+      .from('vendor_kyc')
+      .update({ reopened_until: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('brand_id', req.params.brandId)
+      .select('brand_id')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Vendor not found.' });
+    console.log(`[admin] ${req.user.email} re-locked vendor ${req.params.brandId}`);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to lock vendor details', details: e.message });
+  }
+});
+
 app.get('/api/brand/payments', requireAuth, requireBrand, async (req, res) => {
   try {
     const { data, error } = await req.supabase
@@ -1152,16 +1399,34 @@ app.get('/api/brand/payments', requireAuth, requireBrand, async (req, res) => {
       .maybeSingle();
 
     if (error) throw error;
-    res.json({ payments: data });
+    const { locked, lockAt } = await getKycState(createSupabaseServiceClient(), req.brandProfile.id);
+    res.json({ payments: data, locked: !!(locked && data), lock_at: lockAt });
   } catch (e) {
     res.status(500).json({ error: 'Failed to load payment details', details: e.message });
   }
 });
 
+// Payout details follow the same 42h window as the KYC payout fields; otherwise
+// they would be a way around the lock. Writes go through the service client
+// (the browser write policies are removed at deploy time).
 app.post('/api/brand/payments', requireAuth, requireBrand, async (req, res) => {
   try {
+    const admin = createSupabaseServiceClient();
+    const { locked } = await getKycState(admin, req.brandProfile.id);
+    if (locked) {
+      const { data: existing, error: exErr } = await admin
+        .from('vendor_payments').select('id').eq('brand_id', req.brandProfile.id).maybeSingle();
+      if (exErr) throw exErr;
+      if (existing) {
+        return res.status(403).json({
+          error: 'Payout details can no longer be changed here. Contact MerchMarket support if something is wrong.',
+          code: 'PAYOUT_LOCKED'
+        });
+      }
+    }
+
     const { method, label, details } = req.body || {};
-    const { error } = await req.supabase
+    const { error } = await admin
       .from('vendor_payments')
       .upsert({
         brand_id: req.brandProfile.id,
@@ -1174,7 +1439,114 @@ app.post('/api/brand/payments', requireAuth, requireBrand, async (req, res) => {
     if (error) throw error;
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: 'Failed to save payment details', details: e.message });
+    res.status(500).json({ error: 'Failed to save payout details', details: e.message });
+  }
+});
+
+// -------- Brand account deletion --------
+function storagePathFromUrl(url) {
+  if (typeof url !== 'string') return null;
+  const part = url.split('/product-images/')[1];
+  return part ? decodeURIComponent(part.split('?')[0]) : null;
+}
+
+// Removes the brand's uploaded images except those still used by archived
+// products (kept because paid orders reference them).
+async function purgeBrandImages(admin, brandId) {
+  const { data: kept, error } = await admin
+    .from('products').select('images').eq('brand_id', brandId).not('archived_at', 'is', null);
+  if (error) throw error;
+
+  const keep = new Set();
+  for (const p of kept || []) {
+    for (const img of Array.isArray(p.images) ? p.images : []) {
+      if (typeof img === 'string') { const sp = storagePathFromUrl(img); if (sp) keep.add(sp); continue; }
+      if (img && typeof img === 'object') {
+        if (img.path) keep.add(img.path);
+        const sp = storagePathFromUrl(img.url || img.image);
+        if (sp) keep.add(sp);
+      }
+    }
+  }
+
+  const bucket = admin.storage.from('product-images');
+  const toRemove = [];
+  for (let offset = 0; ; offset += 100) {
+    const { data: files, error: listErr } = await bucket.list(brandId, { limit: 100, offset });
+    if (listErr) throw listErr;
+    if (!files || !files.length) break;
+    for (const f of files) {
+      const path = `${brandId}/${f.name}`;
+      if (!keep.has(path)) toRemove.push(path);
+    }
+    if (files.length < 100) break;
+  }
+  for (let i = 0; i < toRemove.length; i += 100) {
+    const { error: rmErr } = await bucket.remove(toRemove.slice(i, i + 100));
+    if (rmErr) throw rmErr;
+  }
+  return toRemove.length;
+}
+
+app.get('/api/brand/account/deletion-check', requireAuth, requireBrand, async (req, res) => {
+  try {
+    const { data, error } = await createSupabaseServiceClient()
+      .rpc('brand_deletion_blockers', { p_brand: req.brandProfile.id });
+    if (error) throw error;
+    res.json({
+      canDelete: data.open_orders === 0 && data.unsettled_funds === 0,
+      open_orders: data.open_orders,
+      unsettled_funds: data.unsettled_funds,
+      unpaid_orders: data.unpaid_orders
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to check account status', details: e.message });
+  }
+});
+
+app.post('/api/brand/account/delete', requireAuth, requireBrand, async (req, res) => {
+  try {
+    const { password, confirm } = req.body || {};
+    if (confirm !== 'DELETE') return res.status(400).json({ error: 'Type DELETE to confirm.' });
+    if (!password || !req.user?.email) return res.status(400).json({ error: 'Enter your password to confirm.' });
+
+    // Re-authenticate: a stolen session alone must not be able to wipe an account.
+    const { error: pwError } = await createSupabaseClient().auth.signInWithPassword({
+      email: req.user.email,
+      password
+    });
+    if (pwError) return res.status(401).json({ error: 'Incorrect password.' });
+
+    const admin = createSupabaseServiceClient();
+    const brandId = req.brandProfile.id;
+
+    const { data: summary, error } = await admin.rpc('delete_brand_account_data', { p_brand: brandId });
+    if (error) {
+      if (/BRAND_DELETION_BLOCKED/.test(error.message)) {
+        return res.status(409).json({
+          error: 'You still have confirmed orders in progress or funds awaiting release. Complete or settle them first.',
+          code: 'BRAND_DELETION_BLOCKED'
+        });
+      }
+      throw error;
+    }
+
+    let imagesRemoved = null;
+    try { imagesRemoved = await purgeBrandImages(admin, brandId); }
+    catch (e) { console.error('brand image cleanup failed for', brandId, e.message); }
+
+    const { error: authError } = await admin.auth.admin.deleteUser(brandId);
+    if (authError) {
+      console.error('brand auth deletion failed for', brandId, authError.message);
+      return res.status(500).json({
+        error: 'Your data was removed but we could not close your login. Please contact MerchMarket support.',
+        summary
+      });
+    }
+
+    res.json({ ok: true, summary: { ...summary, images_removed: imagesRemoved } });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to delete account', details: e.message });
   }
 });
 
@@ -1220,6 +1592,15 @@ app.get('/wishlist.html', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'wish
 app.get('/product.html', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'product.html')));
 app.get('/cart.html', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'cart.html')));
 app.get('/orders.html', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'orders.html')));
+
+// Never serve source, migrations or project metadata from the static root.
+app.use((req, res, next) => {
+  if (/^\/(server\.js|package(-lock)?\.json|vercel\.json|TODO\.md|README\.md|CNAME|migrations(\/|$))/i.test(req.path) ||
+      /\/\.|\.sql$/i.test(req.path)) {
+    return res.status(404).send('Not found');
+  }
+  next();
+});
 
 // Static assets
 app.use(express.static(PUBLIC_DIR));
