@@ -73,11 +73,26 @@ function clearCookie(name) {
   document.cookie = `${name}=; path=/; max-age=0; SameSite=Lax${secureFlag}`;
 }
 
-function syncBrandSessionCookie(user) {
-  if (user?.type === 'brand') {
-    setCookie('mm_brand_session', `brand:${user.id}`, 60 * 60 * 24);
-  } else {
-    clearCookie('mm_brand_session');
+// The brand session cookie is now issued by the server (HttpOnly + signed) after
+// it has verified the login token, so the browser can no longer forge it.
+async function syncBrandSessionCookie(user, accessToken) {
+  try {
+    clearCookie('mm_brand_session'); // remove the old browser-set cookie
+    if (user?.type === 'brand') {
+      const token = accessToken || _currentAccessToken || (await getCurrentAccessToken());
+      if (!token) return;
+      const res = await fetch('/api/session/brand', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'same-origin'
+      });
+      if (res.ok) { try { sessionStorage.setItem('mm_brand_sync', String(Date.now())); } catch (e) {} }
+    } else {
+      try { sessionStorage.removeItem('mm_brand_sync'); } catch (e) {}
+      await fetch('/api/session/brand', { method: 'DELETE', credentials: 'same-origin' });
+    }
+  } catch (e) {
+    console.warn('brand session sync failed:', e);
   }
 }
 
@@ -381,6 +396,7 @@ async function login(email, password) {
 
       const recovered = await fetchProfile(data.user.id);
       if (recovered) {
+        await syncBrandSessionCookie(recovered, data.session?.access_token);
         window.location.href = recovered.type === 'brand' ? '/brandflow.html' : '/marketplace.html';
         return { ...data.user, ...recovered };
       }
@@ -399,7 +415,7 @@ async function login(email, password) {
     console.warn('localStorage sync failed:', e);
   }
 
-  syncBrandSessionCookie(profile);
+  await syncBrandSessionCookie(profile, data.session?.access_token);
 
   // Cache is already set by fetchProfile above — redirect immediately
   window.location.href = profile.type === 'brand' ? '/brandflow.html' : '/marketplace.html';
@@ -408,7 +424,7 @@ async function login(email, password) {
 
 async function logout() {
   clearProfileCache();
-  syncBrandSessionCookie(null);
+  await syncBrandSessionCookie(null);
   await db.auth.signOut();
   window.location.href = 'login.html';
 }
@@ -450,7 +466,7 @@ db.auth.onAuthStateChange(async (event, session) => {
       console.warn('localStorage sync failed:', e);
     }
 
-    syncBrandSessionCookie(profile);
+    syncBrandSessionCookie(profile, session.access_token);
     window.dispatchEvent(new CustomEvent('userReady', { detail: profile }));
   }
 
@@ -1275,6 +1291,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       updateCartCount()    // real cart badge
     ]);
   }
+
+  // Keep a brand's server-issued session fresh (re-issued at most every 6 hours).
+  try {
+    const last = Number(sessionStorage.getItem('mm_brand_sync') || 0);
+    if (!isAuthPage && Date.now() - last > 6 * 3600 * 1000) {
+      const u = await getCurrentUser();
+      if (u?.type === 'brand') syncBrandSessionCookie(u);
+    }
+  } catch (e) {}
 
   if (page.includes('marketplace')) await initMarketplace();
   if (page.includes('brandflow'))   initAdmin();

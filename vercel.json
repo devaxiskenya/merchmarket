@@ -2,12 +2,19 @@
   "version": 2,
   "builds": [
     {
-      "src": "server.js",
+      "src": "backend/server.js",
       "use": "@vercel/node",
-      "config": { "includeFiles": ["**/*.html", "**/*.css", "**/*.js", "**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.svg", "**/*.ico", "**/*.webp"] }
+      "config": {
+        "includeFiles": [
+          "frontend/**"
+        ]
+      }
     }
   ],
   "routes": [
-    { "src": "/(.*)", "dest": "server.js" }
+    {
+      "src": "/(.*)",
+      "dest": "backend/server.js"
+    }
   ]
 }
