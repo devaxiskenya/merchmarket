@@ -257,7 +257,7 @@ app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
   res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2 https://cdn.jsdelivr.net/npm/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com https://fonts.googleapis.com data:; img-src 'self' data: https:; connect-src 'self' https://omyzcnizwxumvookotsy.supabase.co https://*.supabase.co wss://*.supabase.co; frame-ancestors 'none'; object-src 'none'; base-uri 'self';");
 
-  const isSensitivePage = ['brandflow.html', 'brand-profile.html', 'add-item.html', 'view-order.html', 'profile.html', 'orders.html', 'wishlist.html', 'cart.html', 'login.html', 'signup.html', 'verify.html'].some(page => req.path.endsWith(page));
+  const isSensitivePage = ['brandflow.html', 'brand-profile.html', 'admin-vendors.html', 'add-item.html', 'view-order.html', 'profile.html', 'orders.html', 'wishlist.html', 'cart.html', 'login.html', 'signup.html', 'verify.html'].some(page => req.path.endsWith(page));
   if (isSensitivePage) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     res.setHeader('Pragma', 'no-cache');
@@ -1094,17 +1094,24 @@ async function getKycState(admin, brandId) {
   if (error) throw error;
   if (!data) return { row: null, locked: false, lockAt: null };
   const lockAt = new Date(new Date(data.created_at).getTime() + KYC_EDIT_WINDOW_HOURS * 3600 * 1000);
-  const locked = Date.now() >= lockAt.getTime() && data.status !== 'rejected';
-  return { row: data, locked, lockAt: lockAt.toISOString() };
+  const reopenedUntil = data.reopened_until ? new Date(data.reopened_until) : null;
+  const reopened = !!(reopenedUntil && reopenedUntil.getTime() > Date.now());
+  const locked = Date.now() >= lockAt.getTime() && data.status !== 'rejected' && !reopened;
+  return {
+    row: data, locked, lockAt: lockAt.toISOString(),
+    reopenedUntil: reopened ? reopenedUntil.toISOString() : null
+  };
 }
 
 app.get('/api/brand/kyc', requireAuth, requireBrand, async (req, res) => {
   try {
-    const { row, locked, lockAt } = await getKycState(createSupabaseServiceClient(), req.brandProfile.id);
+    const { row, locked, lockAt, reopenedUntil } = await getKycState(createSupabaseServiceClient(), req.brandProfile.id);
+    if (row) { delete row.reopened_by; delete row.reopen_reason; }
     res.json({
       kyc: row,
       locked,
       lock_at: lockAt,
+      reopened_until: reopenedUntil,
       edit_window_hours: KYC_EDIT_WINDOW_HOURS,
       locked_fields: KYC_LOCKED_FIELDS
     });
@@ -1287,6 +1294,99 @@ app.delete('/api/brand/products/:id', requireAuth, requireBrand, async (req, res
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Failed to delete product', details: e.message });
+  }
+});
+
+// -------- Admin (vendor review) --------
+// Admins are identified server-side only: an allow-list of verified emails in the
+// ADMIN_EMAILS env var, or app_metadata.role === 'admin' (only settable with the
+// service key). profiles.role is NOT used — users can edit their own profile row.
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
+  .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+
+function requireAdmin(req, res, next) {
+  const u = req.user || {};
+  const email = (u.email || '').toLowerCase();
+  const isAdmin = (u.app_metadata?.role === 'admin') ||
+    (u.email_confirmed_at && ADMIN_EMAILS.includes(email));
+  if (!isAdmin) return res.status(403).json({ error: 'Admin access required.' });
+  next();
+}
+
+app.get('/api/admin/vendors', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const admin = createSupabaseServiceClient();
+    const { data: rows, error } = await admin.from('vendor_kyc').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    const ids = (rows || []).map(r => r.brand_id);
+    const { data: profs, error: pErr } = ids.length
+      ? await admin.from('profiles').select('id, name, email').in('id', ids)
+      : { data: [], error: null };
+    if (pErr) throw pErr;
+    const byId = new Map((profs || []).map(p => [p.id, p]));
+
+    const now = Date.now();
+    res.json({
+      vendors: (rows || []).map(r => {
+        const lockAtMs = new Date(r.created_at).getTime() + KYC_EDIT_WINDOW_HOURS * 3600 * 1000;
+        const reopened = !!(r.reopened_until && new Date(r.reopened_until).getTime() > now);
+        return {
+          ...r,
+          name: byId.get(r.brand_id)?.name || null,
+          email: byId.get(r.brand_id)?.email || null,
+          lock_at: new Date(lockAtMs).toISOString(),
+          editable: now < lockAtMs || reopened || r.status === 'rejected',
+          reopened
+        };
+      })
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to load vendors', details: e.message });
+  }
+});
+
+app.post('/api/admin/vendors/:brandId/reopen', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const hours = Math.min(Math.max(parseInt(req.body?.hours, 10) || 24, 1), 72);
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 300) : '';
+    if (!reason) return res.status(400).json({ error: 'Give a reason for reopening (kept for the audit trail).' });
+
+    const now = new Date();
+    const { data, error } = await createSupabaseServiceClient()
+      .from('vendor_kyc')
+      .update({
+        reopened_until: new Date(now.getTime() + hours * 3600 * 1000).toISOString(),
+        reopened_by: req.user.email,
+        reopen_reason: reason,
+        reopened_at: now.toISOString(),
+        updated_at: now.toISOString()
+      })
+      .eq('brand_id', req.params.brandId)
+      .select('brand_id, reopened_until')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Vendor not found.' });
+    console.log(`[admin] ${req.user.email} reopened vendor ${req.params.brandId} for ${hours}h: ${reason}`);
+    res.json({ ok: true, reopened_until: data.reopened_until });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to reopen vendor details', details: e.message });
+  }
+});
+
+app.post('/api/admin/vendors/:brandId/lock', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await createSupabaseServiceClient()
+      .from('vendor_kyc')
+      .update({ reopened_until: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('brand_id', req.params.brandId)
+      .select('brand_id')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Vendor not found.' });
+    console.log(`[admin] ${req.user.email} re-locked vendor ${req.params.brandId}`);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to lock vendor details', details: e.message });
   }
 });
 
@@ -1492,6 +1592,15 @@ app.get('/wishlist.html', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'wish
 app.get('/product.html', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'product.html')));
 app.get('/cart.html', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'cart.html')));
 app.get('/orders.html', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'orders.html')));
+
+// Never serve source, migrations or project metadata from the static root.
+app.use((req, res, next) => {
+  if (/^\/(server\.js|package(-lock)?\.json|vercel\.json|TODO\.md|README\.md|CNAME|migrations(\/|$))/i.test(req.path) ||
+      /\/\.|\.sql$/i.test(req.path)) {
+    return res.status(404).send('Not found');
+  }
+  next();
+});
 
 // Static assets
 app.use(express.static(PUBLIC_DIR));

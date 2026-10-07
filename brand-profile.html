@@ -547,6 +547,8 @@
     if (payload.locked) {
       note.classList.add('locked');
       note.textContent = '🔒 Business type, KRA PIN, goods/services declaration and payout details are locked to protect your account from fraud. Contact MerchMarket support if something needs correcting. You can still update your contact person and phone.';
+    } else if (payload.reopened_until && Date.now() >= new Date(payload.lock_at).getTime()) {
+      note.textContent = `MerchMarket has reopened your details for editing until ${new Date(payload.reopened_until).toLocaleString()} (${describeTimeLeft(payload.reopened_until)} left). Please make your corrections before then.`;
     } else if (status === 'rejected') {
       note.textContent = 'Your application was not approved' + (k.status_reason ? ': ' + k.status_reason : '.') + ' Correct your details below and save to resubmit.';
     } else if (payload.lock_at) {
