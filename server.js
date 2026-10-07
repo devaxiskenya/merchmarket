@@ -1,6 +1,9 @@
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
+const fs = require('fs');
+const { minify: terserMinify } = require('terser');
+const CleanCSS = require('clean-css');
 const { createClient } = require('@supabase/supabase-js');
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -207,12 +210,10 @@ async function requireBrand(req, res, next) {
 }
 
 function isLocalhost(req) {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string') {
-    const first = forwarded.split(',')[0].trim();
-    if (first === '127.0.0.1' || first === '::1') return true;
-  }
-  const ip = req.ip || req.socket?.remoteAddress || '';
+  // Never trust the local-dev shortcut in production, and never trust a
+  // client-supplied X-Forwarded-For to claim "I am localhost".
+  if (process.env.VERCEL || process.env.NODE_ENV === 'production') return false;
+  const ip = req.socket?.remoteAddress || '';
   return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
 }
 
@@ -233,20 +234,52 @@ function rateLimit(req, res, next) {
   next();
 }
 
+// Brand session cookie: HttpOnly and HMAC-signed by the server, issued only
+// after a verified brand login (POST /api/session/brand). It used to be a plain
+// "brand:<id>" cookie set from the browser, which anyone could fake.
+const BRAND_SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
+
+function brandSessionSecret() {
+  return process.env.SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+}
+
+function brandSessionSignature(payload) {
+  return crypto.createHmac('sha256', brandSessionSecret()).update('mm-brand-session:' + payload).digest('base64url');
+}
+
+function signBrandSession(brandId) {
+  const exp = Math.floor(Date.now() / 1000) + BRAND_SESSION_TTL_SECONDS;
+  const payload = `brand:${brandId}.${exp}`;
+  return `${payload}.${brandSessionSignature(payload)}`;
+}
+
+function verifyBrandSession(value) {
+  if (!value || !brandSessionSecret()) return false;
+  const parts = value.split('.');
+  if (parts.length !== 3 || !parts[0].startsWith('brand:')) return false;
+  if (!(Number(parts[1]) > Date.now() / 1000)) return false;
+  const expected = Buffer.from(brandSessionSignature(`${parts[0]}.${parts[1]}`));
+  const given = Buffer.from(parts[2]);
+  return expected.length === given.length && crypto.timingSafeEqual(expected, given);
+}
+
+function readCookie(req, name) {
+  const found = (req.headers.cookie || '').split(';').map(p => p.trim()).find(p => p.startsWith(name + '='));
+  if (!found) return '';
+  try { return decodeURIComponent(found.slice(name.length + 1)); } catch (e) { return ''; }
+}
+
 function requireBrandSession(req, res, next) {
   if (isLocalhost(req)) return next();
-
-  const cookieHeader = req.headers.cookie || '';
-  const brandCookie = cookieHeader
-    .split(';')
-    .map(part => part.trim())
-    .find(part => part.startsWith('mm_brand_session='));
-
-  if (brandCookie && decodeURIComponent(brandCookie.split('=')[1]).startsWith('brand:')) {
-    return next();
-  }
-
+  if (verifyBrandSession(readCookie(req, 'mm_brand_session'))) return next();
+  // A page navigation goes to the brand login; scripts and other requests just get a 403.
+  if (req.path.endsWith('.html')) return res.redirect(302, '/login.html?type=brand');
   return res.status(403).type('text/plain').send('Forbidden: brand authentication required');
+}
+
+function sessionCookieFlags(req) {
+  const secure = req.secure || req.get('x-forwarded-proto') === 'https';
+  return `Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
 }
 
 app.use(rateLimit);
@@ -1021,6 +1054,18 @@ function cleanVariants(rawVariants) {
     .filter(v => v.size_label && Number.isFinite(v.stock) && v.stock >= 0);
 }
 
+// -------- Brand session cookie --------
+app.post('/api/session/brand', requireAuth, requireBrand, (req, res) => {
+  res.append('Set-Cookie',
+    `mm_brand_session=${encodeURIComponent(signBrandSession(req.brandProfile.id))}; Max-Age=${BRAND_SESSION_TTL_SECONDS}; ${sessionCookieFlags(req)}`);
+  res.json({ ok: true });
+});
+
+app.delete('/api/session/brand', (req, res) => {
+  res.append('Set-Cookie', `mm_brand_session=; Max-Age=0; ${sessionCookieFlags(req)}`);
+  res.json({ ok: true });
+});
+
 // -------- Vendor KYC (spec section 7) --------
 const KRA_PIN_RE = /^[AP][0-9]{9}[A-Z]$/;
 const KYC_BUSINESS_TYPES = ['sole_trader', 'company'];
@@ -1618,6 +1663,60 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// JS and CSS are served minified (cached in memory, rebuilt if the file changes).
+// If minifying ever fails, the original file is served so the site keeps working.
+const ASSET_CACHE = new Map();
+
+async function loadAsset(file) {
+  const stat = await fs.promises.stat(file);
+  const cached = ASSET_CACHE.get(file);
+  if (cached && cached.mtimeMs === stat.mtimeMs) return cached;
+
+  const src = await fs.promises.readFile(file, 'utf8');
+  let body = src;
+  try {
+    if (file.endsWith('.js')) {
+      const out = await terserMinify(src, { compress: true, mangle: true, format: { comments: false } });
+      if (out.code) body = out.code;
+    } else {
+      const out = new CleanCSS({ level: 1, rebase: false }).minify(src);
+      if (!out.errors.length && out.styles) body = out.styles;
+    }
+  } catch (e) {
+    console.error('minify failed for', path.basename(file), e.message);
+  }
+  const entry = {
+    mtimeMs: stat.mtimeMs,
+    body,
+    etag: 'W/"' + crypto.createHash('sha1').update(body).digest('hex').slice(0, 20) + '"'
+  };
+  ASSET_CACHE.set(file, entry);
+  return entry;
+}
+
+async function serveAsset(req, res, next) {
+  try {
+    const dest = (req.get('sec-fetch-dest') || '').toLowerCase();
+    res.setHeader('Vary', 'Sec-Fetch-Dest');
+    if (['document', 'iframe', 'frame', 'embed', 'object'].includes(dest)) {
+      return res.status(404).send('Not found');
+    }
+    const file = path.join(PUBLIC_DIR, path.basename(req.path));
+    const entry = await loadAsset(file);
+    res.setHeader('ETag', entry.etag);
+    res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+    if (req.headers['if-none-match'] === entry.etag) return res.status(304).end();
+    res.type(path.extname(file)).send(entry.body);
+  } catch (e) {
+    if (e.code === 'ENOENT') return next();
+    next(e);
+  }
+}
+
+// Brand dashboard code is only sent to a verified brand session.
+app.get('/brandflow-admin.js', requireBrandSession, serveAsset);
+app.get(/^\/[A-Za-z0-9._-]+\.(js|css)$/, serveAsset);
 
 // Static assets
 app.use(express.static(PUBLIC_DIR));
