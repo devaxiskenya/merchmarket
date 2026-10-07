@@ -9,7 +9,8 @@ const app = express();
 app.use(express.json({ limit: '2mb' }));
 
 // Static frontend files (brand-only pages are protected below)
-const PUBLIC_DIR = __dirname;
+// Frontend files live in ../frontend; this server and its code live in backend/.
+const PUBLIC_DIR = path.join(__dirname, '..', 'frontend');
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://omyzcnizwxumvookotsy.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || 'sb_publishable_2Dvox3zHhG4WG7An-sn0tQ_eZ9z6xh8';
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
