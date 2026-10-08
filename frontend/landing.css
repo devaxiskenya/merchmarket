@@ -1,0 +1,47 @@
+/* Landing / waitlist page — builds on merchmarket.css tokens */
+nav .btn { padding: .55rem 1.2rem; font-size: .9rem; }
+
+.pill {
+  display: inline-block; margin-bottom: 1.4rem; padding: .4rem 1rem;
+  border: 1px solid var(--border-brand); border-radius: 999px;
+  background: rgba(196,125,46,.12); color: var(--accent-light);
+  font-size: .85rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+}
+
+.features { padding: 6rem 2rem; }
+
+.waitlist { padding: 6rem 1.5rem; background: rgba(12,8,8,.6); }
+.waitlist-card {
+  max-width: 560px; margin: 0 auto; padding: 2.5rem;
+  background: rgba(255,255,255,.04); border: 1px solid var(--border-brand);
+  border-radius: var(--radius-xl); backdrop-filter: blur(12px);
+  box-shadow: 0 20px 60px rgba(196,125,46,.12);
+}
+.waitlist-sub { text-align: center; color: var(--text-secondary); margin-bottom: 2rem; }
+
+.role-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; margin-bottom: 1.6rem; }
+.role-toggle label { cursor: pointer; }
+.role-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.role-toggle span {
+  display: block; padding: .8rem 1rem; text-align: center; font-weight: 600;
+  border: 1px solid var(--border-brand); border-radius: var(--radius-md);
+  color: var(--text-secondary); transition: all .25s ease;
+}
+.role-toggle input:checked + span { background: var(--gradient-brand); color: #0a0a0a; border-color: transparent; }
+.role-toggle input:focus-visible + span { outline: 2px solid var(--accent-light); outline-offset: 2px; }
+
+.opt { color: var(--text-secondary); font-weight: 400; font-size: .85em; }
+[hidden] { display: none !important; }
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+
+.form-msg { min-height: 1.4rem; margin-top: 1rem; text-align: center; font-size: .95rem; color: var(--text-secondary); }
+.form-msg.error { color: #ff6b6b; }
+
+.wl-success { text-align: center; }
+.wl-success h3 { font-family: 'Syne', sans-serif; font-size: 1.6rem; color: var(--accent-light); margin-bottom: .6rem; }
+.wl-success p { color: var(--text-secondary); margin-bottom: 1.5rem; }
+
+@media (max-width: 600px) {
+  nav { padding: 1rem 1.2rem; }
+  .waitlist-card { padding: 1.8rem 1.3rem; }
+}

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MerchMarket — Join the Waitlist</title>
+  <meta name="description" content="Kenya's marketplace for brand merchandise. Join the MerchMarket waitlist as a buyer or a vendor.">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="merchmarket.css">
+  <link rel="stylesheet" href="landing.css">
+</head>
+<body style="background-image:url('35674.png');background-size:cover;background-position:center;background-attachment:fixed;background-repeat:no-repeat;">
+
+  <nav>
+    <div class="logo" style="cursor:default;">MerchMarket</div>
+    <a href="#waitlist" class="btn btn-primary">Join the waitlist</a>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-content">
+      <span class="pill">Launching soon · Kenya</span>
+      <h1 class="hero-title">Get Your Merch<br>at MerchMarket</h1>
+      <p>Brands sell, buyers discover. Be first in line when Kenya's merchandise marketplace opens its doors.</p>
+      <div class="hero-buttons">
+        <a href="#waitlist" class="btn btn-primary">Join the waitlist</a>
+        <a href="#how" class="btn btn-secondary" style="border-color:#c47d2e;color:#ffd8b5;">How it works →</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="features" id="how">
+    <h2 class="section-title">One Marketplace, Two Sides</h2>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <h3>For buyers</h3>
+        <p>Discover merchandise from brands you care about, save favourites to a wishlist, and track every order.</p>
+      </div>
+      <div class="feature-card">
+        <h3>For vendors</h3>
+        <p>Open your brand storefront, upload products with sizes and photos, and manage orders from one dashboard.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Built for Kenya</h3>
+        <p>Local payments and order tracking built in, so buying and selling feels simple from day one.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="waitlist" id="waitlist">
+    <div class="waitlist-card">
+      <h2 class="section-title" style="margin-bottom:.6rem;">Join the Waitlist</h2>
+      <p class="waitlist-sub">Early members hear first when we launch.</p>
+
+      <form id="waitlist-form" novalidate>
+        <div class="role-toggle" role="radiogroup" aria-label="I am a">
+          <label><input type="radio" name="role" value="buyer" checked><span>I'm a buyer</span></label>
+          <label><input type="radio" name="role" value="vendor"><span>I'm a vendor</span></label>
+        </div>
+
+        <div class="form-group">
+          <label for="wl-name">Name</label>
+          <input id="wl-name" name="name" type="text" maxlength="80" autocomplete="name" placeholder="Your name" required>
+        </div>
+        <div class="form-group">
+          <label for="wl-email">Email</label>
+          <input id="wl-email" name="email" type="email" maxlength="254" autocomplete="email" placeholder="you@example.com" required>
+        </div>
+        <div class="form-group">
+          <label for="wl-phone">Phone <span class="opt">(optional)</span></label>
+          <input id="wl-phone" name="phone" type="tel" maxlength="20" autocomplete="tel" placeholder="+254 7XX XXX XXX">
+        </div>
+        <div class="form-group" id="brand-group" hidden>
+          <label for="wl-brand">Brand name <span class="opt">(optional)</span></label>
+          <input id="wl-brand" name="brand_name" type="text" maxlength="80" placeholder="Your brand">
+        </div>
+
+        <div class="hp" aria-hidden="true">
+          <label for="wl-company">Company</label>
+          <input id="wl-company" name="company" type="text" tabindex="-1" autocomplete="off">
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="wl-submit" style="width:100%;">Join the waitlist</button>
+        <p class="form-msg" id="wl-msg" role="status" aria-live="polite"></p>
+      </form>
+
+      <div class="wl-success" id="wl-success" hidden>
+        <h3>You're on the list 🎉</h3>
+        <p>Thanks for joining. We'll be in touch as soon as MerchMarket opens.</p>
+        <a id="wl-vendor-link" class="btn btn-secondary" hidden
+           href="https://chat.whatsapp.com/FRTKQDRdyfN8L6JtDNw522?s=cl&amp;p=a&amp;mlu=4"
+           target="_blank" rel="noopener noreferrer"
+           style="border-color:#c47d2e;color:#ffd8b5;">Join the vendor WhatsApp channel →</a>
+      </div>
+    </div>
+  </section>
+
+  <footer style="background:rgba(0,0,0,.6);border-top:1px solid rgba(170,111,2,.3);padding:3rem;text-align:center;color:#a0a0a0;">
+    <div class="logo" style="margin-bottom:1rem;cursor:default;">MerchMarket</div>
+    <p>&copy; 2026 MerchMarket. Made for creators everywhere.</p>
+    <p style="margin-top:1rem;">
+      <a href="https://www.instagram.com/merchmart.ke" target="_blank" rel="noopener noreferrer" style="color:#a0a0a0;margin:0 .8rem;">Instagram</a>
+      <a href="mailto:devaxiskenya@gmail.com" style="color:#a0a0a0;margin:0 .8rem;">Contact Us</a>
+    </p>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="waitlist.js"></script>
+</body>
+</html>
