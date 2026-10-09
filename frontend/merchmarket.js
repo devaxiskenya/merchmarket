@@ -388,10 +388,13 @@ async function login(email, password) {
       if (!recoveryRes.ok) {
         const payload = await recoveryRes.json().catch(() => ({}));
         console.warn('Profile recovery via server failed, falling back to direct Supabase write:', payload.error || recoveryRes.statusText);
-        await db.from('profiles').upsert({
+        // Insert-only: the database no longer lets the browser edit protected profile columns.
+        await db.from('profiles').insert({
           id: data.user.id,
-          ...recoveryPayload
-        }, { onConflict: 'id' });
+          email: data.user.email,
+          name: recoveryPayload.name,
+          type: recoveryPayload.type === 'brand' ? 'brand' : 'member'
+        });
       }
 
       const recovered = await fetchProfile(data.user.id);
