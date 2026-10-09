@@ -316,24 +316,45 @@ app.get('/api/member/profile', requireAuth, async (req, res) => {
   }
 });
 
+// Only these columns may be changed by the user. type, role, points, email,
+// completed_purchases etc. are never taken from the request body.
+const PROFILE_EDITABLE = ['name', 'phone', 'address', 'bio', 'website', 'avatar_url', 'body_profile', 'adaptive_sizing_enabled'];
+
 app.patch('/api/member/profile', requireAuth, async (req, res) => {
   try {
-    const payload = {
-      id: req.user.id,
-      email: req.user.email,
-      type: req.user.user_metadata?.type || 'member',
-      updated_at: new Date().toISOString(),
-      ...req.body
-    };
+    const body = req.body || {};
+    const changes = {};
+    for (const key of PROFILE_EDITABLE) {
+      if (key in body) changes[key] = body[key];
+    }
+    if ('name' in changes && !(typeof changes.name === 'string' && changes.name.trim())) {
+      return res.status(400).json({ error: 'Name cannot be empty.' });
+    }
+    const now = new Date().toISOString();
 
-    const { data, error } = await req.supabase
+    const { data: updated, error } = await req.supabase
       .from('profiles')
-      .upsert(payload, { onConflict: 'id' })
+      .update({ ...changes, updated_at: now })
+      .eq('id', req.user.id)
+      .select('*')
+      .maybeSingle();
+    if (error) throw error;
+    if (updated) return res.json({ profile: updated });
+
+    // Profile row missing (recovery after a failed signup trigger): create it.
+    // Account type only ever comes from the signup metadata, and only brand/member are valid.
+    const type = req.user.user_metadata?.type === 'brand' ? 'brand' : 'member';
+    const name = (typeof changes.name === 'string' && changes.name.trim())
+      || req.user.user_metadata?.name
+      || String(req.user.email || '').split('@')[0]
+      || 'Member';
+    const { data: created, error: insertError } = await req.supabase
+      .from('profiles')
+      .insert({ ...changes, id: req.user.id, email: req.user.email, name, type, updated_at: now })
       .select('*')
       .single();
-
-    if (error) throw error;
-    res.json({ profile: data });
+    if (insertError) throw insertError;
+    res.json({ profile: created });
   } catch (e) {
     res.status(500).json({ error: 'Failed to update profile', details: e.message });
   }
@@ -567,64 +588,13 @@ app.post('/api/member/cart/clear', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/member/orders', requireAuth, async (req, res) => {
-  try {
-    const { orders } = req.body || {};
-    if (!Array.isArray(orders) || orders.length === 0) {
-      return res.status(400).json({ error: 'No orders supplied' });
-    }
-
-    const created = [];
-    for (const order of orders) {
-      const { brand_id, total_amount, location, items = [] } = order || {};
-      if (!brand_id || !Array.isArray(items) || items.length === 0) {
-        continue;
-      }
-
-      const { data, error } = await req.supabase
-        .from('orders')
-        .insert({
-          user_id: req.user.id,
-          brand_id,
-          total_amount: String(total_amount ?? '0.00'),
-          status: 'pending',
-          location: location || 'Nairobi, Kenya',
-          created_at: new Date().toISOString()
-        })
-        .select('id')
-        .single();
-
-      if (error || !data) {
-        throw error || new Error('Failed to create order');
-      }
-
-      const orderItems = items.map(item => ({
-        order_id: data.id,
-        product_id: item.product_id,
-        quantity: item.quantity,
-        sku: item.sku || '',
-        price: item.unit_price,
-        unit_price: item.unit_price
-      }));
-
-      const { error: itemsError } = await req.supabase.from('order_items').insert(orderItems);
-      if (itemsError) throw itemsError;
-
-      created.push(data.id);
-    }
-
-    if (created.length === 0) {
-      return res.status(400).json({ error: 'No valid orders created' });
-    }
-
-    res.json({ ok: true, orderIds: created });
-  } catch (e) {
-    res.status(500).json({ error: 'Failed to create member orders', details: e.message });
-  }
-});
-
+// (Removed: POST /api/member/orders accepted client-supplied totals and prices. Checkout
+// goes through /api/payments/pesapal/initiate, which prices every line from the database.)
 app.post('/api/payments/pesapal/initiate', requireAuth, async (req, res) => {
   try {
+    // Orders and their lines are created with the service client: the browser has no
+    // INSERT rights on orders/order_items, so prices and payment state can't be forged.
+    const supabaseAdmin = createSupabaseServiceClient();
     const { orders, billing_address } = req.body || {};
     if (!Array.isArray(orders) || orders.length === 0) {
       return res.status(400).json({ error: 'No orders supplied' });
@@ -676,7 +646,7 @@ app.post('/api/payments/pesapal/initiate', requireAuth, async (req, res) => {
       const amount = lines.reduce((sum, l) => sum + (parseFloat(l.product.price) || 0) * l.quantity, 0);
       combinedTotal += amount;
 
-      const { data, error } = await req.supabase
+      const { data, error } = await supabaseAdmin
         .from('orders')
         .insert({
           user_id: req.user.id,
@@ -700,7 +670,7 @@ app.post('/api/payments/pesapal/initiate', requireAuth, async (req, res) => {
         price: l.product.price,
         unit_price: l.product.price
       }));
-      const { error: itemsError } = await req.supabase.from('order_items').insert(orderItems);
+      const { error: itemsError } = await supabaseAdmin.from('order_items').insert(orderItems);
       if (itemsError) throw itemsError;
 
       created.push(data.id);
@@ -722,7 +692,6 @@ app.post('/api/payments/pesapal/initiate', requireAuth, async (req, res) => {
       line_1: billing_address?.line_1 || 'Nairobi'
     };
 
-    const supabaseAdmin = createSupabaseServiceClient();
     const pesapalRes = await submitPesapalOrder({
       merchantReference: checkoutGroupId,
       amount: combinedTotal,
@@ -731,7 +700,7 @@ app.post('/api/payments/pesapal/initiate', requireAuth, async (req, res) => {
       supabaseAdmin
     });
 
-    await req.supabase
+    await supabaseAdmin
       .from('orders')
       .update({ pesapal_tracking_id: pesapalRes.order_tracking_id })
       .eq('checkout_group_id', checkoutGroupId);
@@ -743,6 +712,46 @@ app.post('/api/payments/pesapal/initiate', requireAuth, async (req, res) => {
   }
 });
 
+
+// Settles a checkout from a payment status that Pesapal itself reported.
+// Rules: the reference comes from Pesapal's response (never from the request), a
+// tracking id can only ever settle one checkout, the amount paid must cover the
+// orders, and an order that is already paid is never changed again.
+async function settleCheckoutPayment(admin, groupId, trackingId, paymentStatus, statusPayload) {
+  if (!groupId) throw new Error('Payment has no merchant reference');
+  if (statusPayload?.merchant_reference && statusPayload.merchant_reference !== groupId) {
+    throw new Error('Payment reference does not match this checkout');
+  }
+
+  const { data: orders, error } = await admin
+    .from('orders')
+    .select('id, total_amount, payment_status, pesapal_tracking_id')
+    .eq('checkout_group_id', groupId);
+  if (error) throw error;
+  if (!orders || orders.length === 0) return { matched: 0 };
+
+  if (orders.some(o => o.pesapal_tracking_id && o.pesapal_tracking_id !== trackingId)) {
+    throw new Error('Tracking id does not belong to this checkout');
+  }
+
+  if (paymentStatus === 'paid') {
+    const expected = orders.reduce((sum, o) => sum + (parseFloat(o.total_amount) || 0), 0);
+    const paid = parseFloat(statusPayload?.amount);
+    if (!Number.isFinite(paid) || paid + 0.01 * orders.length < expected) {
+      throw new Error(`Amount paid (${statusPayload?.amount}) does not cover the order total (${expected.toFixed(2)})`);
+    }
+    const currency = String(statusPayload?.currency || 'KES').toUpperCase();
+    if (currency !== 'KES') throw new Error(`Unexpected payment currency ${currency}`);
+  }
+
+  const { error: updErr } = await admin
+    .from('orders')
+    .update({ payment_status: paymentStatus, pesapal_tracking_id: trackingId })
+    .eq('checkout_group_id', groupId)
+    .neq('payment_status', 'paid');
+  if (updErr) throw updErr;
+  return { matched: orders.length };
+}
 
 // Shared handler for both GET and POST — Pesapal was registered with
 // ipn_notification_type 'GET', but some Pesapal accounts/configs deliver via
@@ -763,13 +772,18 @@ async function handlePesapalIpn(req, res) {
     const statusPayload = await getPesapalTransactionStatus(orderTrackingId);
     const paymentStatus = pesapalStatusToPaymentStatus(statusPayload);
 
-    const supabaseAdmin = createSupabaseServiceClient();
-    const { error } = await supabaseAdmin
-      .from('orders')
-      .update({ payment_status: paymentStatus, pesapal_tracking_id: orderTrackingId })
-      .eq('checkout_group_id', merchantReference || '__no_match__');
+    // Which checkout this tracking id really belongs to comes from Pesapal's own
+    // response; the reference in the request is only compared against it.
+    const verifiedReference = statusPayload?.merchant_reference;
+    if (!verifiedReference) {
+      return res.status(400).json({ error: 'Pesapal did not return a merchant reference for this payment' });
+    }
+    if (merchantReference && merchantReference !== verifiedReference) {
+      console.warn('pesapal ipn: reference mismatch', { orderTrackingId, claimed: merchantReference, actual: verifiedReference });
+      return res.status(400).json({ error: 'Merchant reference does not match this payment' });
+    }
 
-    if (error) throw error;
+    await settleCheckoutPayment(createSupabaseServiceClient(), verifiedReference, orderTrackingId, paymentStatus, statusPayload);
 
     // Pesapal expects this exact ack shape back.
     res.json({
@@ -815,13 +829,8 @@ app.get('/api/payments/pesapal/status', requireAuth, async (req, res) => {
         const statusPayload = await getPesapalTransactionStatus(trackingId);
         const verified = pesapalStatusToPaymentStatus(statusPayload);
         if (verified !== 'unpaid') {
-          const supabaseAdmin = createSupabaseServiceClient();
-          const { error: updError } = await supabaseAdmin
-            .from('orders')
-            .update({ payment_status: verified })
-            .eq('checkout_group_id', checkout_group_id)
-            .eq('user_id', req.user.id);
-          if (!updError) data.forEach(o => { o.payment_status = verified; });
+          await settleCheckoutPayment(createSupabaseServiceClient(), checkout_group_id, trackingId, verified, statusPayload);
+          data.forEach(o => { if (o.payment_status !== 'paid') o.payment_status = verified; });
         }
       } catch (verifyErr) {
         console.error('pesapal direct verify failed:', verifyErr.message);
