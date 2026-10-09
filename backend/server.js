@@ -1605,27 +1605,7 @@ app.post('/api/brand/account/delete', requireAuth, requireBrand, async (req, res
   }
 });
 
-app.post('/api/brand/reset', requireAuth, requireBrand, async (req, res) => {
-  try {
-    const productIds = await req.supabase
-      .from('products')
-      .select('id')
-      .eq('brand_id', req.brandProfile.id)
-      .then(r => (r.data || []).map(p => p.id));
-
-    if (productIds.length) {
-      await req.supabase.from('order_items').delete().in('product_id', productIds);
-      await req.supabase.from('wishlists').delete().in('product_id', productIds);
-      await req.supabase.from('products').delete().eq('brand_id', req.brandProfile.id);
-    }
-
-    await req.supabase.from('orders').delete().eq('brand_id', req.brandProfile.id);
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: 'Failed to reset brand data', details: e.message });
-  }
-});
-
+// (Removed: POST /api/brand/reset. Brands can no longer bulk-delete their orders and products.)
 // -------- Brand access --------
 // Brand-only pages require an authenticated brand session cookie.
 // Localhost requests are allowed for development calls.
