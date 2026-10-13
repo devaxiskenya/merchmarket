@@ -219,7 +219,7 @@
         document.getElementById('pdSizeSection').style.display = 'block';
         document.getElementById('pdSizes').innerHTML = variants.map(v => `
           <button type="button" class="pd-size-btn" data-size="${escapeAttribute(v.size_label)}"
-            data-stock="${v.stock}" ${v.stock === 0 ? 'disabled' : ''}>
+            data-stock="${Number(v.stock) || 0}" ${v.stock === 0 ? 'disabled' : ''}>
             ${escapeHtml(v.size_label)}
           </button>`).join('');
 
@@ -247,7 +247,7 @@
         document.getElementById('pdGuideBody').innerHTML = specs.map(s => `
           <tr>
             <td>${escapeHtml(s.size_label)}</td>
-            ${allKeys.map(k => `<td>${s.garment?.[k] ?? '—'}</td>`).join('')}
+            ${allKeys.map(k => `<td>${escapeHtml(s.garment?.[k] ?? '—')}</td>`).join('')}
           </tr>`).join('');
       }
 

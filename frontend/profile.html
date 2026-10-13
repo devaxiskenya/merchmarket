@@ -387,9 +387,9 @@
     function renderAvatar(url, name) {
       const wrap = document.getElementById('avatarWrap');
       if (url) {
-        wrap.innerHTML = `<img src="${url}" alt="Avatar">`;
+        wrap.innerHTML = `<img src="${escapeAttribute(sanitizeImageUrl(url))}" alt="Avatar">`;
       } else {
-        wrap.innerHTML = `<span class="avatar-initial">${initials(name)}</span>`;
+        wrap.innerHTML = `<span class="avatar-initial">${escapeHtml(initials(name))}</span>`;
       }
     }
 

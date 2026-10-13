@@ -67,8 +67,7 @@
   const orderId = params.get('id');
 
   function esc(s) {
-    if (typeof window.escapeHtml === 'function') return window.escapeHtml(s ?? '—');
-    return String(s ?? '—');
+    return String(s ?? '—').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   }
 
   async function loadOrder() {
@@ -97,7 +96,7 @@
     const st    = order.status || 'pending';
 
     const itemsHtml = items.length
-      ? items.map(i => `<li>${esc(i.products?.name || i.sku)} — Qty: ${i.quantity} — KES ${parseFloat(i.unit_price || 0).toLocaleString()}</li>`).join('')
+      ? items.map(i => `<li>${esc(i.products?.name || i.sku)} — Qty: ${esc(i.quantity)} — KES ${parseFloat(i.unit_price || 0).toLocaleString()}</li>`).join('')
       : '<li>No items</li>';
 
     document.getElementById('orderTitle').textContent = `Order #${order.id}`;
@@ -114,7 +113,7 @@
       </div>
       <div class="order-block">
         <h4>📍 Shipping</h4>
-        <p><strong>Location:</strong> ${order.location || 'Nairobi, Kenya'}</p>
+        <p><strong>Location:</strong> ${esc(order.location || 'Nairobi, Kenya')}</p>
         <p><strong>Date:</strong> ${date}</p>
       </div>
       <div class="order-block order-total-row">
