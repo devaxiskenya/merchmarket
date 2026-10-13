@@ -1054,6 +1054,30 @@ function cleanSizeSpecs(rawSizeSpecs) {
     .filter(Boolean);
 }
 
+// Only these product columns come from the request. Everything else (brand_id,
+// seller, archived_at, badge, gradient, timestamps, ...) is set by the server or not at all.
+const PRODUCT_EDITABLE = ['name', 'sku', 'stock', 'price', 'category', 'description', 'wear_category', 'item_type', 'condition', 'tags', 'images'];
+
+// Images must be files in this brand's own folder of our product-images bucket.
+function cleanProductImages(rawImages, brandId) {
+  if (!Array.isArray(rawImages)) return [];
+  const prefix = `${SUPABASE_URL}/storage/v1/object/public/product-images/${brandId}/`;
+  return rawImages
+    .map(img => (typeof img === 'string' ? { url: img } : img))
+    .filter(img => img && typeof img.url === 'string' && img.url.startsWith(prefix) && !/["'<>\s\\]/.test(img.url))
+    .slice(0, 10)
+    .map(img => ({ url: img.url, path: img.url.slice(prefix.length - brandId.length - 1) }));
+}
+
+function pickProductFields(body, brandId) {
+  const out = {};
+  for (const key of PRODUCT_EDITABLE) {
+    if (key in (body || {})) out[key] = body[key];
+  }
+  if ('images' in out) out.images = cleanProductImages(out.images, brandId);
+  return out;
+}
+
 function cleanVariants(rawVariants) {
   if (!Array.isArray(rawVariants)) return null;
   return rawVariants
@@ -1232,7 +1256,8 @@ app.put('/api/brand/kyc', requireAuth, requireBrand, async (req, res) => {
 
 app.post('/api/brand/products', requireAuth, requireBrand, requireApprovedBrand, async (req, res) => {
   try {
-    const { variants: rawVariants, size_specs: rawSizeSpecs, ...rest } = req.body;
+    const { variants: rawVariants, size_specs: rawSizeSpecs } = req.body || {};
+    const rest = pickProductFields(req.body, req.brandProfile.id);
     const variants = cleanVariants(rawVariants);
     const sizeSpecs = cleanSizeSpecs(rawSizeSpecs); // null = not sent, don't set the column
 
@@ -1276,7 +1301,8 @@ app.post('/api/brand/products', requireAuth, requireBrand, requireApprovedBrand,
 
 app.put('/api/brand/products/:id', requireAuth, requireBrand, requireApprovedBrand, async (req, res) => {
   try {
-    const { variants: rawVariants, size_specs: rawSizeSpecs, ...rest } = req.body;
+    const { variants: rawVariants, size_specs: rawSizeSpecs } = req.body || {};
+    const rest = pickProductFields(req.body, req.brandProfile.id);
     const variants = cleanVariants(rawVariants); // null = field omitted entirely, [] = cleared
     const sizeSpecs = cleanSizeSpecs(rawSizeSpecs); // same null/[] distinction
 

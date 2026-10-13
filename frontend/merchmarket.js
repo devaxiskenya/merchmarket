@@ -722,7 +722,8 @@ function normalizeProduct(row) {
     itemType: row.item_type || row.type || 'other',
     condition: row.condition || 'new',
     tags: Array.isArray(row.tags) ? row.tags : [],
-    gradient: row.gradient || getGradientForId(String(row.id)),
+    // Always one of our own gradients: the stored column is never put into a style attribute.
+    gradient: getGradientForId(String(row.id)),
     images,
     stock,
     badge: stock === 0 ? 'Out of Stock' : (row.badge || ''),
@@ -952,13 +953,14 @@ function renderProductGrid(products) {
   }
 
   grid.innerHTML = products.map(p => {
-    const stockBadge  = p.stock < 5 ? `<div class="product-badge">${p.stock} left</div>` : '';
+    const stockBadge  = p.stock < 5 ? `<div class="product-badge">${Number(p.stock) || 0} left</div>` : '';
     const addBtnText  = p.stock === 0 ? 'Out of Stock' : 'Add to Cart';
     const addBtnDisabled = p.stock === 0 ? 'disabled style="opacity:.6;cursor:not-allowed"' : '';
     const isWishlisted = wishlistedProductMap.has(p.id);
     const wishlistActiveClass = isWishlisted ? ' active' : '';
     const wishlistGlyph = isWishlisted ? '♥' : '♡';
-    const imageSrc    = p.images?.[0]?.url || '';
+    const imageSrc    = escapeAttribute(sanitizeImageUrl(p.images?.[0]?.url || ''));
+    const safeId      = escapeAttribute(p.id);
     const safeName     = escapeHtml(p.name);
     const safeSeller   = escapeHtml(p.seller);
     const safeCondition = escapeHtml(p.condition);
@@ -968,8 +970,8 @@ function renderProductGrid(products) {
       : `<div class="image-placeholder" style="width:100%;height:100%;background:linear-gradient(45deg,#ccc,#ddd);border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:center;color:#666;font-size:1.2rem;">No Image</div>`;
 
     return `
-      <div class="product-card" data-id="${p.id}" data-stock="${p.stock}">
-        <div class="product-image" style="background:${p.gradient};border-radius:12px 12px 0 0;overflow:hidden;cursor:pointer;" onclick="location.href='product.html?id=${p.id}'">
+      <div class="product-card" data-id="${safeId}" data-stock="${Number(p.stock) || 0}">
+        <div class="product-image" style="background:${p.gradient};border-radius:12px 12px 0 0;overflow:hidden;cursor:pointer;" onclick="location.href='product.html?id=${encodeURIComponent(p.id)}'">
           ${imageHtml}
           ${p.badge && p.badge.toLowerCase() !== 'new' ? `<div class="product-badge">${safeBadge}</div>` : ''}
           ${stockBadge}
@@ -980,7 +982,7 @@ function renderProductGrid(products) {
             <div class="seller-badge" style="background:${p.gradient}"></div>
             <span class="seller-name">${safeSeller}</span>
           </div>
-          <h3 class="product-title" style="cursor:pointer;" onclick="location.href='product.html?id=${p.id}'">${safeName}</h3>
+          <h3 class="product-title" style="cursor:pointer;" onclick="location.href='product.html?id=${encodeURIComponent(p.id)}'">${safeName}</h3>
           ${p.condition ? `<div style="font-size:.75rem;color:#a0a0a0;margin-bottom:.3rem;text-transform:capitalize;">Condition: ${safeCondition}</div>` : ''}
           <div class="product-footer">
             <div class="product-price">KES ${p.price.toFixed(0)}</div>
