@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex, nofollow">
-  <title>Vendor Review — MerchMarket Admin</title>
+  <title>Vendors &amp; Couriers — MerchMarket Admin</title>
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="merchmarket.css">
   <style>
@@ -33,6 +33,14 @@
     .v-actions select option { color: #111; }
     .v-note { color: #e0a45f; font-size: .8rem; margin-top: .6rem; }
     #adminMsg { color: #999; padding: 2rem 0; }
+    .section-gap { margin-top: 3rem; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,.08); }
+    .c-form { display: flex; gap: .6rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .c-form input { flex: 1; min-width: 200px; padding: .6rem .8rem; border-radius: 8px; border: 1px solid var(--border-brand); background: rgba(255,255,255,.05); color: #fff; font: inherit; }
+    .c-reveal { display: none; border: 1px solid rgba(46,204,113,.45); background: rgba(46,204,113,.08); border-radius: 12px; padding: 1rem 1.2rem; margin-bottom: 1rem; }
+    .c-reveal.open { display: block; }
+    .c-reveal .code { font-family: monospace; font-size: 1.5rem; letter-spacing: .12em; color: #fff; margin: .4rem 0; user-select: all; }
+    .c-reveal p { color: #bbb; font-size: .85rem; margin: .2rem 0; }
+    @media (max-width: 600px) { .admin-page { padding: 1.2rem 16px; } }
   </style>
 </head>
 <body>
@@ -41,6 +49,24 @@
   <p class="admin-sub">Vendor details lock 42 hours after signup. Reopen a vendor here so they can correct them; the reason is kept for the audit trail.</p>
   <div id="adminMsg">Loading…</div>
   <div id="vendorList"></div>
+
+  <section class="section-gap">
+    <h1>Couriers</h1>
+    <p class="admin-sub">Couriers confirm deliveries at <strong>merchmarket.co.ke/courier.html</strong> by scanning the buyer's QR code. Each courier signs in with an access code that is shown once, here, when you create or reset it.</p>
+    <form class="c-form" id="courierForm">
+      <input id="courierName" maxlength="80" placeholder="Courier or rider name, e.g. Sendy – John K." required>
+      <button class="btn btn-primary" type="submit">Add courier</button>
+    </form>
+    <div class="c-reveal" id="codeReveal" role="status">
+      <p id="codeFor"></p>
+      <div class="code" id="codeValue"></div>
+      <p>Copy it now and send it to the courier privately. It won't be shown again; reset it if it's lost.</p>
+      <button class="btn btn-secondary" type="button" id="codeCopy">Copy code</button>
+      <button class="btn btn-secondary" type="button" id="codeHide">Hide</button>
+    </div>
+    <div id="courierMsg" style="color:#999;">Loading…</div>
+    <div id="courierList"></div>
+  </section>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -137,6 +163,111 @@
     msg.textContent = r.payload.vendors.length ? '' : 'No vendors yet.';
     list.replaceChildren(...r.payload.vendors.map(card));
   }
+
+  load();
+})();
+
+// ── Couriers ──────────────────────────────────────────────
+(function () {
+  const list = document.getElementById('courierList');
+  const msg = document.getElementById('courierMsg');
+  const reveal = document.getElementById('codeReveal');
+
+  async function api(path, method = 'GET', body) {
+    const res = await fetch(path, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    return { ok: res.ok, status: res.status, payload: await res.json().catch(() => ({})) };
+  }
+
+  function showCode(name, code) {
+    document.getElementById('codeFor').textContent = 'Access code for ' + name + ':';
+    document.getElementById('codeValue').textContent = code;
+    reveal.classList.add('open');
+    reveal.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  document.getElementById('codeHide').addEventListener('click', () => {
+    reveal.classList.remove('open');
+    document.getElementById('codeValue').textContent = '';
+  });
+  document.getElementById('codeCopy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(document.getElementById('codeValue').textContent); showToast('Copied.', 'success'); }
+    catch (e) { showToast('Select the code and copy it manually.', 'info'); }
+  });
+
+  function card(c) {
+    const pill = document.createElement('span');
+    pill.className = 'v-pill ' + (c.active ? 'ok' : 'bad');
+    pill.textContent = c.active ? 'Active' : 'Deactivated';
+    const name = document.createElement('span');
+    name.className = 'v-name';
+    name.textContent = c.name;
+    const meta = document.createElement('div');
+    meta.className = 'v-email';
+    meta.textContent = `${c.deliveries} deliver${c.deliveries === 1 ? 'y' : 'ies'} confirmed · added ${new Date(c.created_at).toLocaleDateString()}`;
+
+    const reset = document.createElement('button');
+    reset.className = 'btn btn-secondary';
+    reset.textContent = 'Reset access code';
+    reset.addEventListener('click', async () => {
+      if (!confirm(`Reset ${c.name}'s access code? Their old code stops working immediately.`)) return;
+      reset.disabled = true;
+      const r = await api(`/api/admin/couriers/${c.id}/reset-code`, 'POST');
+      reset.disabled = false;
+      if (!r.ok) return showToast(r.payload.error || 'Failed to reset.', 'error');
+      showCode(c.name, r.payload.access_code);
+    });
+
+    const toggle = document.createElement('button');
+    toggle.className = 'btn ' + (c.active ? 'btn-secondary' : 'btn-primary');
+    toggle.textContent = c.active ? 'Deactivate' : 'Reactivate';
+    toggle.addEventListener('click', async () => {
+      if (c.active && !confirm(`Deactivate ${c.name}? They won't be able to confirm deliveries.`)) return;
+      toggle.disabled = true;
+      const r = await api(`/api/admin/couriers/${c.id}/active`, 'POST', { active: !c.active });
+      if (!r.ok) { toggle.disabled = false; return showToast(r.payload.error || 'Failed to update.', 'error'); }
+      load();
+    });
+
+    const head = document.createElement('div');
+    head.className = 'v-head';
+    const left = document.createElement('div');
+    left.append(name, pill);
+    head.append(left, meta);
+    const actions = document.createElement('div');
+    actions.className = 'v-actions';
+    actions.style.marginTop = '.8rem';
+    actions.append(reset, toggle);
+    const wrap = document.createElement('div');
+    wrap.className = 'v-card';
+    wrap.append(head, actions);
+    return wrap;
+  }
+
+  async function load() {
+    const r = await api('/api/admin/couriers');
+    if (r.status === 401 || r.status === 403) { msg.textContent = ''; document.getElementById('courierForm').style.display = 'none'; return; }
+    if (!r.ok) { msg.textContent = r.payload.error || 'Failed to load couriers.'; return; }
+    msg.textContent = r.payload.couriers.length ? '' : 'No couriers yet. Add one so deliveries can be confirmed.';
+    list.replaceChildren(...r.payload.couriers.map(card));
+  }
+
+  document.getElementById('courierForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = document.getElementById('courierName');
+    const name = input.value.trim();
+    if (!name) return;
+    const btn = e.target.querySelector('button');
+    btn.disabled = true;
+    const r = await api('/api/admin/couriers', 'POST', { name });
+    btn.disabled = false;
+    if (!r.ok) return showToast(r.payload.error || 'Failed to add courier.', 'error');
+    input.value = '';
+    showCode(r.payload.courier.name, r.payload.access_code);
+    load();
+  });
 
   load();
 })();

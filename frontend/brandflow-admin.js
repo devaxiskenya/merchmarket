@@ -240,7 +240,7 @@ function renderOrdersTable(orders) {
           <a class="action-btn" href="view-order.html?id=${escapeValue(order.id)}" style="text-decoration:none;">View</a>
           ${st === 'pending' ? `<button class="action-btn" style="background:#4caf50;color:#fff;" ${isPaid ? '' : 'disabled title="Waiting for payment"'} onclick="updateOrderStatus('${escapeValue(order.id)}','confirmed')">Confirm</button>` : ''}
           ${st === 'confirmed' ? `<button class="action-btn" style="background:#2196f3;color:#fff;" onclick="updateOrderStatus('${escapeValue(order.id)}','active')">Prepare</button>` : ''}
-          ${(st === 'active' || st === 'confirmed') ? `<button class="action-btn" style="background:#ff9800;color:#fff;" onclick="updateOrderStatus('${escapeValue(order.id)}','shipped')">Ship</button>` : ''}
+          ${(st === 'active' || st === 'confirmed') ? `<a class="action-btn" style="background:#ff9800;color:#fff;text-decoration:none;" href="view-order.html?id=${escapeValue(order.id)}" title="Add the carrier and tracking number">Ship…</a>` : ''}
         </td>
       </tr>`;
   }).join('');

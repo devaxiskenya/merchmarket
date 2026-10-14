@@ -873,14 +873,19 @@ app.get('/api/brand/orders/:id', requireAuth, requireBrand, async (req, res) => 
       .from('orders')
       .select(`
         id, total_amount, status, payment_status, location, created_at,
+        tracking_number, carrier, shipped_at, delivered_at, last_status_note,
         profiles!orders_user_id_fkey (name, email),
-        order_items (quantity, sku, unit_price, products (name))
+        order_items (quantity, sku, size, unit_price, products (name)),
+        order_status_history (from_status, to_status, note, actor_role, created_at)
       `)
       .eq('id', req.params.id)
       .eq('brand_id', req.brandProfile.id)
       .single();
 
     if (error) throw error;
+    if (Array.isArray(data.order_status_history)) {
+      data.order_status_history.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    }
     res.json({ order: data });
   } catch (e) {
     res.status(404).json({ error: 'Order not found', details: e.message });
@@ -967,26 +972,93 @@ app.get('/api/member/orders/:id/delivery-code', requireAuth, async (req, res) =>
   }
 });
 
-// Courier: confirm a delivery by QR token, or by order id + 6-digit backup code.
-// Auth is a courier access code (header x-courier-code), checked against couriers.access_code_hash.
+// -------- Couriers --------
+// A courier signs in with an access code (header x-courier-code). Only its sha256 hash is stored.
+// Failed sign-ins are throttled per IP so codes can't be guessed.
+const courierFails = new Map();
+function courierThrottled(ip) {
+  const f = courierFails.get(ip);
+  return !!(f && f.count >= 10 && Date.now() - f.first < 15 * 60 * 1000);
+}
+function courierFailed(ip) {
+  const now = Date.now();
+  const f = courierFails.get(ip);
+  if (!f || now - f.first > 15 * 60 * 1000) courierFails.set(ip, { count: 1, first: now });
+  else f.count += 1;
+}
+
+async function findCourier(req, admin) {
+  const rawCode = String(req.headers['x-courier-code'] || '').trim().toUpperCase();
+  if (!rawCode) return null;
+  const hash = crypto.createHash('sha256').update(rawCode, 'utf8').digest('hex');
+  const { data, error } = await admin
+    .from('couriers').select('id, name').eq('access_code_hash', hash).eq('active', true).maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+async function courierAuth(req, res) {
+  const ip = req.ip || 'unknown';
+  if (courierThrottled(ip)) {
+    res.status(429).json({ error: 'Too many wrong access codes. Try again in 15 minutes.' });
+    return null;
+  }
+  if (!req.headers['x-courier-code']) {
+    res.status(401).json({ error: 'Courier access code required' });
+    return null;
+  }
+  const admin = createSupabaseServiceClient();
+  const courier = await findCourier(req, admin);
+  if (!courier) {
+    courierFailed(ip);
+    res.status(401).json({ error: 'Invalid courier access code' });
+    return null;
+  }
+  return { courier, admin };
+}
+
+// Courier sign-in check: returns the courier's name if the access code is valid.
+app.post('/api/courier/session', async (req, res) => {
+  try {
+    const auth = await courierAuth(req, res);
+    if (!auth) return;
+    res.json({ ok: true, name: auth.courier.name });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to check access code', details: e.message });
+  }
+});
+
+// Courier: confirm a delivery by QR token, or by order reference + 6-digit backup code.
+// The order reference may be the full order id or the 8-character short reference the buyer sees.
 app.post('/api/courier/confirm-delivery', async (req, res) => {
   try {
-    const crypto = require('crypto');
-    const rawCode = String(req.headers['x-courier-code'] || '').trim();
-    if (!rawCode) return res.status(401).json({ error: 'Courier access code required' });
+    const auth = await courierAuth(req, res);
+    if (!auth) return;
+    const { courier, admin } = auth;
 
-    const admin = createSupabaseServiceClient();
-    const hash = crypto.createHash('sha256').update(rawCode, 'utf8').digest('hex');
-    const { data: courier, error: cErr } = await admin
-      .from('couriers').select('id, name').eq('access_code_hash', hash).eq('active', true).maybeSingle();
-    if (cErr) throw cErr;
-    if (!courier) return res.status(401).json({ error: 'Invalid courier access code' });
+    const { token, short_code } = req.body || {};
+    let orderId = typeof req.body?.order_id === 'string' ? req.body.order_id.trim().replace(/^#/, '').toLowerCase() : '';
+    if (!token && orderId && orderId.length < 36) {
+      if (!/^[0-9a-f-]{6,35}$/.test(orderId)) {
+        return res.status(400).json({ ok: false, reason: 'invalid', error: 'That order reference is not valid.' });
+      }
+      const { data: open, error: oErr } = await admin
+        .from('delivery_codes').select('order_id').is('redeemed_at', null);
+      if (oErr) throw oErr;
+      const matches = (open || []).filter(r => String(r.order_id).startsWith(orderId));
+      if (matches.length !== 1) {
+        return res.status(400).json({
+          ok: false, reason: 'invalid',
+          error: matches.length ? 'More than one order matches. Enter more of the order reference.' : 'No shipped order matches that reference.'
+        });
+      }
+      orderId = matches[0].order_id;
+    }
 
-    const { token, order_id, short_code } = req.body || {};
     const { data: result, error } = await admin.rpc('confirm_delivery', {
       p_courier: courier.id,
       p_token: typeof token === 'string' && token ? token.trim() : null,
-      p_order_id: typeof order_id === 'string' && order_id ? order_id.trim() : null,
+      p_order_id: orderId || null,
       p_short_code: typeof short_code === 'string' && short_code ? short_code.trim() : null
     });
     if (error) throw error;
@@ -1442,6 +1514,79 @@ app.post('/api/admin/vendors/:brandId/lock', requireAuth, requireAdmin, async (r
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Failed to lock vendor details', details: e.message });
+  }
+});
+
+// -------- Admin (couriers) --------
+// Access codes are generated here and shown to the admin once. Only the sha256 hash is stored.
+function newCourierCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O or 1/I
+  const bytes = crypto.randomBytes(12);
+  let out = '';
+  for (let i = 0; i < 12; i++) out += alphabet[bytes[i] % alphabet.length];
+  return out.slice(0, 4) + '-' + out.slice(4, 8) + '-' + out.slice(8);
+}
+const hashCourierCode = (code) => crypto.createHash('sha256').update(code, 'utf8').digest('hex');
+
+app.get('/api/admin/couriers', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const admin = createSupabaseServiceClient();
+    const { data, error } = await admin.from('couriers')
+      .select('id, name, active, created_at').order('created_at', { ascending: false });
+    if (error) throw error;
+    const { data: done, error: dErr } = await admin.from('delivery_codes')
+      .select('courier_id').not('courier_id', 'is', null);
+    if (dErr) throw dErr;
+    const counts = {};
+    (done || []).forEach(r => { counts[r.courier_id] = (counts[r.courier_id] || 0) + 1; });
+    res.json({ couriers: (data || []).map(c => ({ ...c, deliveries: counts[c.id] || 0 })) });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to load couriers', details: e.message });
+  }
+});
+
+app.post('/api/admin/couriers', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim().slice(0, 80) : '';
+    if (!name) return res.status(400).json({ error: 'Enter the courier\'s name.' });
+    const code = newCourierCode();
+    const { data, error } = await createSupabaseServiceClient().from('couriers')
+      .insert({ name, access_code_hash: hashCourierCode(code) })
+      .select('id, name, active, created_at').single();
+    if (error) throw error;
+    console.log(`[admin] ${req.user.email} added courier ${data.id} (${name})`);
+    res.json({ courier: data, access_code: code });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to add courier', details: e.message });
+  }
+});
+
+app.post('/api/admin/couriers/:id/reset-code', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const code = newCourierCode();
+    const { data, error } = await createSupabaseServiceClient().from('couriers')
+      .update({ access_code_hash: hashCourierCode(code) })
+      .eq('id', req.params.id).select('id').maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Courier not found.' });
+    console.log(`[admin] ${req.user.email} reset access code for courier ${req.params.id}`);
+    res.json({ ok: true, access_code: code });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to reset access code', details: e.message });
+  }
+});
+
+app.post('/api/admin/couriers/:id/active', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const active = req.body?.active === true;
+    const { data, error } = await createSupabaseServiceClient().from('couriers')
+      .update({ active }).eq('id', req.params.id).select('id, active').maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Courier not found.' });
+    console.log(`[admin] ${req.user.email} set courier ${req.params.id} active=${active}`);
+    res.json({ ok: true, active: data.active });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to update courier', details: e.message });
   }
 });
 

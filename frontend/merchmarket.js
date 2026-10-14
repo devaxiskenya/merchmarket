@@ -138,6 +138,183 @@ function renderNav(currentPage) {
 }
 window.renderNav = renderNav;
 
+/* ─── NOTIFICATIONS (bell + live popups) ─────────────────────
+   Members get a bell in the shared nav. Rows come from the
+   `notifications` table (RLS: a user only sees their own), and new
+   rows arrive live over Supabase realtime. The database writes these
+   when an order changes stage, so nothing here can create one. */
+
+const _notif = { items: [], channel: null, userId: null, open: false };
+
+function notifTimeAgo(iso) {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + ' min ago';
+  if (s < 86400) return Math.floor(s / 3600) + ' h ago';
+  if (s < 7 * 86400) return Math.floor(s / 86400) + ' d ago';
+  return new Date(iso).toLocaleDateString('en-KE', { dateStyle: 'medium' });
+}
+
+function notifLink(n) {
+  return n.order_id ? 'track-order.html?id=' + encodeURIComponent(n.order_id) : 'orders.html';
+}
+
+function injectNotifStyles() {
+  if (document.getElementById('mm-notif-css')) return;
+  const st = document.createElement('style');
+  st.id = 'mm-notif-css';
+  st.textContent = `
+    .mm-bell { position: relative; }
+    .mm-bell-count { position:absolute; top:-8px; right:-10px; background:#c47d2e; color:#000; border-radius:50%;
+      min-width:18px; height:18px; font-size:.7rem; font-weight:700; padding:0 4px; display:none;
+      align-items:center; justify-content:center; }
+    .mm-notif-panel { position:fixed; top:76px; right:16px; width:360px; max-width:calc(100vw - 32px); max-height:70vh;
+      overflow:auto; z-index:9998; background:#151515; border:1px solid rgba(170,111,2,.45); border-radius:14px;
+      box-shadow:0 18px 40px rgba(0,0,0,.5); display:none; font-family:'DM Sans',sans-serif; }
+    .mm-notif-panel.open { display:block; }
+    .mm-notif-head { display:flex; justify-content:space-between; align-items:center; padding:.8rem 1rem;
+      border-bottom:1px solid rgba(255,255,255,.08); position:sticky; top:0; background:#151515; }
+    .mm-notif-head strong { font-family:'Syne',sans-serif; color:#ffd8b5; }
+    .mm-notif-head button { background:none; border:none; color:#c47d2e; font-weight:600; cursor:pointer; font-size:.82rem; }
+    .mm-notif-item { display:block; padding:.75rem 1rem; border-bottom:1px solid rgba(255,255,255,.06);
+      text-decoration:none; color:#ddd; }
+    .mm-notif-item:hover { background:rgba(196,125,46,.08); }
+    .mm-notif-item.unread { background:rgba(196,125,46,.1); }
+    .mm-notif-item .t { font-weight:700; color:#fff; font-size:.9rem; display:flex; gap:.4rem; align-items:center; }
+    .mm-notif-item.unread .t::before { content:''; width:8px; height:8px; border-radius:50%; background:#c47d2e; flex-shrink:0; }
+    .mm-notif-item .b { font-size:.82rem; color:#bbb; margin-top:.15rem; }
+    .mm-notif-item .w { font-size:.72rem; color:#888; margin-top:.25rem; }
+    .mm-notif-empty { padding:2rem 1rem; text-align:center; color:#888; font-size:.88rem; }
+    .mm-pop { position:fixed; top:84px; right:16px; z-index:10001; width:340px; max-width:calc(100vw - 32px);
+      background:#1e1e1e; border:1px solid rgba(196,125,46,.7); border-radius:14px; padding:.9rem 1rem;
+      box-shadow:0 18px 40px rgba(0,0,0,.55); color:#ddd; text-decoration:none; display:block;
+      font-family:'DM Sans',sans-serif; transform:translateY(-12px); opacity:0; transition:all .3s ease; }
+    .mm-pop.show { transform:none; opacity:1; }
+    .mm-pop .t { font-weight:700; color:#ffd8b5; }
+    .mm-pop .b { font-size:.85rem; margin-top:.2rem; }
+    @media (max-width: 768px) { .mm-notif-panel { top:auto; bottom:16px; right:16px; left:16px; width:auto; }
+      .mm-pop { top:16px; right:16px; left:16px; width:auto; } }
+  `;
+  document.head.appendChild(st);
+}
+
+function renderNotifBadge() {
+  const badge = document.getElementById('mm-bell-count');
+  if (!badge) return;
+  const unread = _notif.items.filter(n => !n.read_at).length;
+  badge.textContent = unread > 9 ? '9+' : String(unread);
+  badge.style.display = unread ? 'inline-flex' : 'none';
+  const bell = document.getElementById('mm-bell');
+  if (bell) bell.setAttribute('aria-label', unread ? `Notifications, ${unread} unread` : 'Notifications');
+}
+
+function renderNotifPanel() {
+  const list = document.getElementById('mm-notif-list');
+  if (!list) return;
+  if (!_notif.items.length) {
+    list.innerHTML = '<div class="mm-notif-empty">No notifications yet. Order updates will show up here.</div>';
+    return;
+  }
+  list.innerHTML = _notif.items.map(n => `
+    <a class="mm-notif-item ${n.read_at ? '' : 'unread'}" href="${escapeAttribute(notifLink(n))}" data-notif-id="${escapeAttribute(n.id)}">
+      <div class="t">${escapeHtml(n.title)}</div>
+      ${n.body ? `<div class="b">${escapeHtml(n.body)}</div>` : ''}
+      <div class="w">${escapeHtml(notifTimeAgo(n.created_at))}</div>
+    </a>`).join('');
+}
+
+async function markNotificationsRead(ids) {
+  const unreadIds = ids.filter(id => _notif.items.some(n => n.id === id && !n.read_at));
+  if (!unreadIds.length) return;
+  const now = new Date().toISOString();
+  _notif.items.forEach(n => { if (unreadIds.includes(n.id)) n.read_at = now; });
+  renderNotifBadge();
+  renderNotifPanel();
+  const { error } = await db.from('notifications').update({ read_at: now }).in('id', unreadIds);
+  if (error) console.warn('mark notifications read failed:', error.message);
+}
+
+function showNotifPopup(n) {
+  const old = document.getElementById('mm-pop');
+  if (old) old.remove();
+  const pop = document.createElement('a');
+  pop.id = 'mm-pop';
+  pop.className = 'mm-pop';
+  pop.href = notifLink(n);
+  pop.setAttribute('role', 'status');
+  pop.innerHTML = `<div class="t">🔔 ${escapeHtml(n.title)}</div>${n.body ? `<div class="b">${escapeHtml(n.body)}</div>` : ''}`;
+  pop.addEventListener('click', () => markNotificationsRead([n.id]));
+  document.body.appendChild(pop);
+  requestAnimationFrame(() => pop.classList.add('show'));
+  setTimeout(() => { pop.classList.remove('show'); setTimeout(() => pop.remove(), 400); }, 7000);
+}
+
+async function initNotifications(user) {
+  if (!user || user.type !== 'member') return;
+  const links = document.querySelector('#nav-root .nav-links');
+  if (!links || document.getElementById('mm-bell')) return;
+  injectNotifStyles();
+
+  const bell = document.createElement('a');
+  bell.href = '#';
+  bell.id = 'mm-bell';
+  bell.className = 'mm-bell';
+  bell.setAttribute('role', 'button');
+  bell.setAttribute('aria-haspopup', 'true');
+  bell.innerHTML = '🔔<span class="mm-bell-count" id="mm-bell-count">0</span>';
+  const account = links.querySelector('[data-auth-link="member"]');
+  links.insertBefore(bell, account || links.querySelector('[data-auth-link="login"]'));
+
+  const panel = document.createElement('div');
+  panel.className = 'mm-notif-panel';
+  panel.id = 'mm-notif-panel';
+  panel.innerHTML = '<div class="mm-notif-head"><strong>Notifications</strong><button type="button" id="mm-notif-all">Mark all read</button></div><div id="mm-notif-list"></div>';
+  document.body.appendChild(panel);
+
+  const setOpen = (open) => {
+    _notif.open = open;
+    panel.classList.toggle('open', open);
+    bell.setAttribute('aria-expanded', String(open));
+  };
+  bell.addEventListener('click', (e) => { e.preventDefault(); setOpen(!_notif.open); });
+  document.addEventListener('click', (e) => {
+    if (_notif.open && !panel.contains(e.target) && !bell.contains(e.target)) setOpen(false);
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && _notif.open) setOpen(false); });
+  document.getElementById('mm-notif-all').addEventListener('click', () => markNotificationsRead(_notif.items.map(n => n.id)));
+  panel.addEventListener('click', (e) => {
+    const a = e.target.closest('[data-notif-id]');
+    if (a) markNotificationsRead([a.getAttribute('data-notif-id')]);
+  });
+
+  const { data, error } = await db.from('notifications')
+    .select('id, order_id, type, title, body, read_at, created_at')
+    .order('created_at', { ascending: false })
+    .limit(30);
+  if (error) console.warn('notifications load failed:', error.message);
+  _notif.items = data || [];
+  _notif.userId = user.id;
+  renderNotifBadge();
+  renderNotifPanel();
+
+  // Live: new notifications pop up as they are written by the database.
+  _notif.channel = db.channel('notifications-' + user.id)
+    .on('postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'notifications', filter: 'user_id=eq.' + user.id },
+      (payload) => {
+        const n = payload.new;
+        if (!n || _notif.items.some(x => x.id === n.id)) return;
+        _notif.items.unshift(n);
+        _notif.items = _notif.items.slice(0, 30);
+        renderNotifBadge();
+        renderNotifPanel();
+        showNotifPopup(n);
+        window.dispatchEvent(new CustomEvent('mm:notification', { detail: n }));
+      })
+    .subscribe();
+}
+window.initNotifications = initNotifications;
+
 function debounce(fn, delay) {
   let t;
   return function (...args) {
@@ -1293,6 +1470,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       updateCartBadge(),   // legacy name — actually updates the wishlist badge
       updateCartCount()    // real cart badge
     ]);
+    try { await initNotifications(await getCurrentUser()); }
+    catch (e) { console.warn('notifications unavailable:', e); }
   }
 
   // Keep a brand's server-issued session fresh (re-issued at most every 6 hours).

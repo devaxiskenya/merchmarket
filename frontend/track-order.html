@@ -62,6 +62,24 @@
     .notice.bad  { background: rgba(244,67,54,.1); color: #ef9a9a; border: 1px solid rgba(244,67,54,.25); }
 
     .empty { text-align: center; padding: 4rem 1rem; color: #a0a0a0; }
+    @media (max-width: 768px) { body { padding-top: 215px; } .track-section { margin-top: 0; } .track-title { font-size: 1.6rem; } }
+    .delivery { margin-top: 1.1rem; padding: 1rem 1.1rem; border-radius: 12px; background: rgba(196,125,46,.08); border: 1px solid rgba(196,125,46,.35); }
+    .delivery h4 { margin: 0 0 .5rem; font-family: 'Syne', sans-serif; color: #ffd8b5; font-size: 1rem; }
+    .delivery p { margin: .2rem 0; color: #ddd; font-size: .88rem; }
+    .delivery .mono { font-family: monospace; color: #fff; }
+    .update { margin-top: .9rem; color: #ddd; font-size: .86rem; }
+    .update strong { color: #ffd8b5; }
+    .code-btn { margin-top: .8rem; width: 100%; }
+    .qr-modal { position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,.82); display: none; align-items: center; justify-content: center; padding: 1rem; }
+    .qr-modal.open { display: flex; }
+    .qr-card { background: #151515; border: 1px solid rgba(196,125,46,.5); border-radius: 18px; padding: 1.4rem; width: 100%; max-width: 360px; text-align: center; }
+    .qr-card h3 { margin: 0 0 .3rem; font-family: 'Syne', sans-serif; color: #ffd8b5; }
+    .qr-card p { color: #a0a0a0; font-size: .85rem; margin: .3rem 0; }
+    .qr-box { background: #fff; border-radius: 12px; padding: 12px; margin: 1rem auto; width: min(260px, 100%); aspect-ratio: 1; }
+    .qr-box svg, .qr-box img { width: 100%; height: 100%; display: block; }
+    .backup { font-family: monospace; font-size: 1.6rem; letter-spacing: .3em; color: #fff; margin: .2rem 0; }
+    .ref { font-family: monospace; color: #ffd8b5; }
+    .qr-close { margin-top: 1rem; width: 100%; }
     .empty a { color: #c47d2e; font-weight: 600; text-decoration: none; }
   </style>
 </head>
@@ -75,9 +93,21 @@
     <p class="track-sub" id="track-sub">Loading…</p>
     <div id="track-body"></div>
   </section>
+  <div class="qr-modal" id="qr-modal" role="dialog" aria-modal="true" aria-labelledby="qr-title">
+    <div class="qr-card">
+      <h3 id="qr-title">Delivery code</h3>
+      <p>Show this to the courier when your order arrives. Don’t share it before then.</p>
+      <div class="qr-box" id="qr-box"></div>
+      <p>If the scan doesn’t work, read out:</p>
+      <p>Order <span class="ref" id="qr-ref"></span></p>
+      <div class="backup" id="qr-code"></div>
+      <button class="btn btn-primary qr-close" id="qr-close">Done</button>
+    </div>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="merchmarket.js"></script>
+  <script src="vendor/qrcode.min.js"></script>
   <script>
   (function () {
     // Stage order. Maps the statuses that exist today onto buyer-facing steps.
@@ -105,6 +135,38 @@
       return n;
     }
 
+    // When an order first reached a step, from its status history.
+    const STEP_STATUS = { confirmed: 'confirmed', preparing: 'active', shipped: 'shipped', delivered: 'completed' };
+    function reachedAt(o, key) {
+      const st = STEP_STATUS[key];
+      if (!st) return null;
+      const h = (o.order_status_history || []).filter(x => x.to_status === st)
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))[0];
+      if (h) return h.created_at;
+      if (key === 'shipped') return o.shipped_at;
+      if (key === 'delivered') return o.delivered_at;
+      return null;
+    }
+    function latestNote(o) {
+      const h = (o.order_status_history || []).filter(x => x.note && x.note !== 'Existing order')
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+      return h ? h.note : null;
+    }
+    function deliveryHtml(o) {
+      const st = (o.status || '').toLowerCase();
+      if (st !== 'shipped' && st !== 'completed') return '';
+      const rows = [];
+      if (o.carrier) rows.push('<p>Carrier: <span class="mono">' + escapeHtml(o.carrier) + '</span></p>');
+      if (o.tracking_number) rows.push('<p>Tracking number: <span class="mono">' + escapeHtml(o.tracking_number) + '</span></p>');
+      if (st === 'completed') {
+        return '<div class="delivery"><h4>Delivered</h4>' + rows.join('') +
+          (o.delivered_at ? '<p>Confirmed by the courier on ' + escapeHtml(new Date(o.delivered_at).toLocaleString('en-KE', { dateStyle: 'medium', timeStyle: 'short' })) + '.</p>' : '') +
+          '</div>';
+      }
+      return '<div class="delivery"><h4>On its way</h4>' + rows.join('') +
+        '<p>When the courier arrives, show them your delivery code. They scan it to confirm you received the order.</p>' +
+        '<button class="btn btn-primary code-btn" data-code-for="' + escapeHtml(o.id) + '">Show delivery code</button></div>';
+    }
     function money(n) { return 'KES ' + (Number(n) || 0).toLocaleString(); }
     function shortId(id) { return String(id || '').slice(0, 8); }
 
@@ -117,8 +179,9 @@
           if (i < done - 1) cls = 'done';
           else if (i === done - 1) cls = (done === STEPS.length ? 'done' : 'now');
         } else if (i === 0) cls = 'done';
-        const when = (i === 0 && o.created_at)
-          ? new Date(o.created_at).toLocaleString('en-KE', { dateStyle: 'medium', timeStyle: 'short' })
+        const at = (i === 0) ? o.created_at : reachedAt(o, s.key);
+        const when = (at && (cls === 'done' || cls === 'now'))
+          ? new Date(at).toLocaleString('en-KE', { dateStyle: 'medium', timeStyle: 'short' })
           : s.hint;
         return '<li class="step ' + cls + '"><span class="dot"></span>' +
                '<div class="label">' + escapeHtml(s.label) + '</div>' +
@@ -152,10 +215,51 @@
               (cancelled ? 'Cancelled' : (paid ? 'Paid' : 'Unpaid')) + '</span></div></div>' +
         '<ul class="items">' + itemsHtml + '</ul>' +
         timelineHtml(o) + notice +
+        (latestNote(o) ? '<div class="update"><strong>Latest update:</strong> ' + escapeHtml(latestNote(o)) + '</div>' : '') +
+        deliveryHtml(o) +
       '</div>';
     }
 
-    document.addEventListener('DOMContentLoaded', async () => {
+    async function showDeliveryCode(orderId, btn) {
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/member/orders/' + encodeURIComponent(orderId) + '/delivery-code', { headers: await getAuthHeader() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { showToast(data.error || 'Could not load your delivery code', 'error'); return; }
+        const qr = qrcode(0, 'M');
+        qr.addData(data.token);
+        qr.make();
+        document.getElementById('qr-box').innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+        document.getElementById('qr-ref').textContent = '#' + shortId(data.order_id);
+        document.getElementById('qr-code').textContent = data.short_code;
+        document.getElementById('qr-modal').classList.add('open');
+      } catch (e) {
+        showToast('Could not load your delivery code', 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+    function closeCode() {
+      document.getElementById('qr-modal').classList.remove('open');
+      document.getElementById('qr-box').innerHTML = '';
+      document.getElementById('qr-code').textContent = '';
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('qr-close').addEventListener('click', closeCode);
+      document.getElementById('qr-modal').addEventListener('click', e => { if (e.target.id === 'qr-modal') closeCode(); });
+      document.getElementById('track-body').addEventListener('click', e => {
+        const b = e.target.closest('[data-code-for]');
+        if (b) showDeliveryCode(b.getAttribute('data-code-for'), b);
+      });
+      // Refresh when a live order notification arrives (sent by the notification bell).
+      window.addEventListener('mm:notification', () => {
+        if (!document.getElementById('qr-modal').classList.contains('open')) loadTracking();
+      });
+      loadTracking();
+    });
+
+    async function loadTracking() {
       const body  = document.getElementById('track-body');
       const title = document.getElementById('track-title');
       const sub   = document.getElementById('track-sub');
@@ -199,7 +303,7 @@
         (multi ? 'Your items ship from ' + group.length + ' sellers, so each has its own delivery below.' : '');
 
       body.innerHTML = group.map(o => shipmentHtml(o, o.id === order.id, multi)).join('');
-    });
+    }
   })();
   </script>
 </body>

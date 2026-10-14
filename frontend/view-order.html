@@ -32,6 +32,31 @@
     .order-total-row .total-value { font-size: 1.3rem; font-weight: 700; color: var(--accent-light); font-family: 'Syne', sans-serif; }
     .order-actions { display: flex; gap: 1rem; justify-content: flex-end; flex-wrap: wrap; margin-top: .5rem; }
     .order-actions .btn { min-width: 140px; }
+    .stage-form { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; margin-top: .4rem; }
+    .stage-form label { display: flex; flex-direction: column; gap: .3rem; font-size: .8rem; color: #a0a0a0; }
+    .stage-form label.full { grid-column: 1 / -1; }
+    .stage-form input, .stage-form textarea {
+      background: rgba(0,0,0,.35); border: 1px solid rgba(170,111,2,.3); border-radius: 8px;
+      color: #fff; padding: .6rem .7rem; font: inherit; font-size: .9rem;
+    }
+    .stage-form textarea { min-height: 64px; resize: vertical; }
+    .stage-hint { color: #a0a0a0; font-size: .85rem; margin: .2rem 0 0; }
+    .history { list-style: none; margin: 0; padding: 0; }
+    .history li { position: relative; padding: 0 0 .9rem 1.4rem; color: #ddd; font-size: .9rem; }
+    .history li::before { content: ''; position: absolute; left: 4px; top: 6px; width: 8px; height: 8px; border-radius: 50%; background: #c47d2e; }
+    .history li::after { content: ''; position: absolute; left: 7px; top: 16px; bottom: 0; width: 2px; background: rgba(255,255,255,.1); }
+    .history li:last-child::after { display: none; }
+    .history .when { color: #8a8a8a; font-size: .78rem; }
+    .history .note { color: #bbb; font-size: .82rem; margin-top: .15rem; }
+    .btn-danger { background: transparent !important; border: 1px solid rgba(244,67,54,.5) !important; color: #ef9a9a !important; }
+    .order-panel > .order-block + .order-block { margin-top: 1rem; }
+    @media (max-width: 768px) { .order-page { padding-top: 10rem !important; } }
+    @media (max-width: 600px) {
+      .order-panel { padding: 1.2rem; }
+      .stage-form { grid-template-columns: 1fr; }
+      .order-actions { justify-content: stretch; }
+      .order-actions .btn { flex: 1; }
+    }
   </style>
 </head>
 <body class="admin-body">
@@ -47,7 +72,7 @@
   </ul>
 </nav>
 
-<main class="admin-main order-page" style="padding-top:6rem;">
+<main class="admin-main order-page" style="padding-top:7rem;">
   <div class="module-header">
     <h1 id="orderTitle">Order</h1>
   </div>
@@ -81,7 +106,7 @@
     }
 
     const headers = await getAuthHeader();
-    const res = await fetch(`/api/brand/orders/${orderId}`, { headers });
+    const res = await fetch(`/api/brand/orders/${encodeURIComponent(orderId)}`, { headers });
     const payload = await res.json().catch(() => ({}));
     const order = payload.order;
 
@@ -95,14 +120,33 @@
     const date  = order.created_at ? new Date(order.created_at).toLocaleDateString('en-KE') : '—';
     const total = parseFloat(order.total_amount) || 0;
     const st    = order.status || 'pending';
+    const paid  = order.payment_status === 'paid';
+    const hist  = order.order_status_history || [];
 
     const itemsHtml = items.length
-      ? items.map(i => `<li>${esc(i.products?.name || i.sku)} — Qty: ${i.quantity} — KES ${parseFloat(i.unit_price || 0).toLocaleString()}</li>`).join('')
+      ? items.map(i => `<li>${esc(i.products?.name || i.sku)}${i.size ? ' (' + esc(i.size) + ')' : ''} — Qty: ${Number(i.quantity) || 0} — KES ${parseFloat(i.unit_price || 0).toLocaleString()}</li>`).join('')
       : '<li>No items</li>';
 
-    document.getElementById('orderTitle').textContent = `Order #${order.id}`;
+    const fmt = d => d ? new Date(d).toLocaleString('en-KE', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+    const histHtml = hist.length
+      ? hist.map(h => `<li><strong>${esc(STAGE_LABEL[h.to_status] || h.to_status)}</strong>
+          <div class="when">${esc(fmt(h.created_at))}${h.actor_role === 'system' || h.actor_role === 'service_role' ? ' · system' : ''}</div>
+          ${h.note ? `<div class="note">${esc(h.note)}</div>` : ''}</li>`).join('')
+      : '<li>No history yet.</li>';
+
+    const trackingHtml = (order.tracking_number || order.carrier)
+      ? `<p><strong>Carrier:</strong> ${esc(order.carrier || '—')}</p><p><strong>Tracking no.:</strong> ${esc(order.tracking_number || '—')}</p>`
+      : '';
+
+    document.getElementById('orderTitle').textContent = `Order #${String(order.id).slice(0, 8)}`;
 
     panel.innerHTML = `
+      <div class="order-block order-total-row">
+        <p style="margin:0;"><strong>Status:</strong> <span class="status ${esc(st)}">${esc((STAGE_LABEL[st] || st).toUpperCase())}</span>
+          <span class="status ${paid ? 'confirmed' : 'pending'}" style="margin-left:.4rem;">${paid ? 'PAID' : 'UNPAID'}</span></p>
+        <div class="total-value">KES ${total.toLocaleString()}</div>
+      </div>
+      ${stageControls(order)}
       <div class="order-block">
         <h4>👤 Customer</h4>
         <p><strong>Name:</strong> ${esc(cust.name)}</p>
@@ -114,36 +158,100 @@
       </div>
       <div class="order-block">
         <h4>📍 Shipping</h4>
-        <p><strong>Location:</strong> ${order.location || 'Nairobi, Kenya'}</p>
-        <p><strong>Date:</strong> ${date}</p>
+        <p><strong>Location:</strong> ${esc(order.location || 'Nairobi, Kenya')}</p>
+        <p><strong>Ordered:</strong> ${esc(date)}</p>
+        ${trackingHtml}
       </div>
-      <div class="order-block order-total-row">
-        <p style="margin:0;"><strong>Status:</strong> <span class="status ${st}">${st.toUpperCase()}</span></p>
-        <div class="total-value">KES ${total.toLocaleString()}</div>
-      </div>
-      <div class="order-actions">
-        ${st === 'pending'   ? `<button class="btn btn-primary" style="background:#4caf50;" onclick="updateStatus('confirmed')">Confirm</button>` : ''}
-        ${st === 'confirmed' ? `<button class="btn btn-primary" style="background:#2196f3;" onclick="updateStatus('active')">Start Preparing</button>` : ''}
-        ${(st === 'active' || st === 'confirmed') ? `<button class="btn btn-primary" style="background:#ff9800;" onclick="updateStatus('shipped')">Mark Shipped</button>` : ''}
-        ${st === 'shipped' ? `<p style="margin:0;color:#a0a0a0;font-size:.85rem;">Delivery is confirmed when the courier scans the buyer's code.</p>` : ''}
+      <div class="order-block">
+        <h4>🕒 History</h4>
+        <ul class="history">${histHtml}</ul>
       </div>
     `;
   }
 
-  async function updateStatus(newStatus) {
-    const res = await fetch(`/api/brand/orders/${orderId}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
-      body: JSON.stringify({ status: newStatus })
-    });
-    const payload = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      console.error('updateOrderStatus error:', payload.error || res.statusText);
-      showToast(payload.error || 'Failed to update order status', 'error');
-      return;
+  const STAGE_LABEL = {
+    pending: 'Placed', confirmed: 'Confirmed', active: 'Being prepared',
+    shipped: 'Shipped', completed: 'Delivered', cancelled: 'Cancelled'
+  };
+
+  // Only the moves the database allows a brand to make.
+  const NEXT = {
+    pending:   ['confirmed'],
+    confirmed: ['active', 'shipped'],
+    active:    ['shipped']
+  };
+  const ACTION_LABEL = { confirmed: 'Confirm order', active: 'Start preparing', shipped: 'Mark as shipped' };
+
+  function stageControls(order) {
+    const st = order.status || 'pending';
+    const paid = order.payment_status === 'paid';
+    if (st === 'shipped') {
+      return `<div class="order-block"><h4>🚚 Out for delivery</h4>
+        <p class="stage-hint">Delivery is confirmed when the courier scans the buyer's QR code. You can't mark it delivered yourself.</p></div>`;
     }
-    showToast(`Order marked as ${newStatus}`, 'success');
-    loadOrder();
+    if (st === 'completed' || st === 'cancelled') return '';
+    if (!paid) {
+      return `<div class="order-block"><h4>⏳ Waiting for payment</h4>
+        <p class="stage-hint">You can start on this order once the buyer has paid.</p></div>`;
+    }
+    const moves = NEXT[st] || [];
+    const canShip = moves.includes('shipped');
+    return `<div class="order-block" id="stageBlock">
+      <h4>➡️ Next step</h4>
+      <div class="stage-form">
+        ${canShip ? `
+        <label>Carrier<input id="carrierIn" maxlength="80" placeholder="e.g. G4S, Sendy, own rider" value="${escAttr(order.carrier)}"></label>
+        <label>Tracking number<input id="trackingIn" maxlength="80" placeholder="Optional" value="${escAttr(order.tracking_number)}"></label>` : ''}
+        <label class="full">Note to the buyer (optional)<textarea id="noteIn" maxlength="300" placeholder="Shown on the buyer's tracking page"></textarea></label>
+      </div>
+      <div class="order-actions">
+        <button class="btn btn-danger" onclick="cancelOrder()">Cancel order</button>
+        ${moves.map(m => `<button class="btn btn-primary" onclick="updateStatus('${m}')">${ACTION_LABEL[m]}</button>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  function escAttr(v) {
+    if (v == null) return '';
+    if (typeof window.escapeAttribute === 'function') return window.escapeAttribute(v);
+    return String(v).replace(/[&"<>']/g, c => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;', "'": '&#39;' }[c]));
+  }
+
+  function cancelOrder() {
+    if (!confirm('Cancel this order? The buyer will be notified. This cannot be undone.')) return;
+    updateStatus('cancelled');
+  }
+
+  let busy = false;
+  async function updateStatus(newStatus) {
+    if (busy) return;
+    const val = id => (document.getElementById(id)?.value || '').trim();
+    const body = { status: newStatus };
+    if (val('noteIn')) body.note = val('noteIn');
+    if (newStatus === 'shipped') {
+      if (!val('carrierIn')) { showToast('Enter the carrier before marking as shipped', 'error'); return; }
+      body.carrier = val('carrierIn');
+      if (val('trackingIn')) body.tracking_number = val('trackingIn');
+    }
+    busy = true;
+    document.querySelectorAll('#stageBlock button').forEach(b => { b.disabled = true; });
+    try {
+      const res = await fetch(`/api/brand/orders/${encodeURIComponent(orderId)}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
+        body: JSON.stringify(body)
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(payload.error || 'Failed to update order status', 'error');
+        return;
+      }
+      showToast(`Order ${(STAGE_LABEL[newStatus] || newStatus).toLowerCase()}`, 'success');
+      await loadOrder();
+    } finally {
+      busy = false;
+      document.querySelectorAll('#stageBlock button').forEach(b => { b.disabled = false; });
+    }
   }
 
   // Page guard + boot
