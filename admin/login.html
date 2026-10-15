@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Sign in</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d0d0d; --card:#151515; --line:rgba(196,125,46,.35); --text:#f2f2f2; --muted:#9a9a9a; --accent:#c47d2e; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--text);
+      font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding:16px; }
+    form { width:100%; max-width:360px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:24px; }
+    h1 { margin:0 0 4px; font-size:20px; }
+    p { margin:0 0 20px; color:var(--muted); font-size:13px; }
+    label { display:block; font-size:13px; color:var(--muted); margin-bottom:14px; }
+    input { display:block; width:100%; margin-top:6px; padding:11px 12px; border-radius:9px; border:1px solid #333;
+      background:#0f0f0f; color:var(--text); font:inherit; }
+    input:focus { outline:2px solid var(--accent); outline-offset:1px; border-color:transparent; }
+    button { width:100%; padding:12px; border:0; border-radius:9px; background:var(--accent); color:#111; font:inherit; font-weight:700; cursor:pointer; }
+    button:disabled { opacity:.6; cursor:default; }
+    #err { color:#ef9a9a; font-size:13px; min-height:20px; margin:4px 0 10px; }
+  </style>
+</head>
+<body>
+  <form id="f" autocomplete="on">
+    <h1>MerchMarket admin</h1>
+    <p>Private. Sign in with your admin account.</p>
+    <label>Email<input id="email" type="email" autocomplete="username" required></label>
+    <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
+    <div id="err" role="alert"></div>
+    <button type="submit">Sign in</button>
+  </form>
+  <script src="/login.js"></script>
+</body>
+</html>

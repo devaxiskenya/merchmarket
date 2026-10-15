@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>MerchMarket Admin</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">MerchMarket <span>Admin</span></div>
+    <div class="who"><span id="who"></span><button type="button" class="link" id="logout">Sign out</button></div>
+  </header>
+  <nav class="tabs" id="tabs" aria-label="Sections">
+    <a href="#overview" data-tab="overview">Overview</a>
+    <a href="#orders" data-tab="orders">Orders</a>
+    <a href="#brands" data-tab="brands">Brands &amp; payouts</a>
+    <a href="#users" data-tab="users">Users</a>
+    <a href="#products" data-tab="products">Products</a>
+    <a href="#couriers" data-tab="couriers">Couriers</a>
+    <a href="#activity" data-tab="activity">Activity</a>
+  </nav>
+  <main id="view" tabindex="-1"></main>
+
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer-inner" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+      <div class="drawer-head"><h2 id="drawer-title"></h2><button type="button" class="icon" id="drawer-close" aria-label="Close">✕</button></div>
+      <div id="drawer-body"></div>
+    </div>
+  </aside>
+
+  <dialog id="ask">
+    <form method="dialog" id="ask-form">
+      <h3 id="ask-title"></h3>
+      <p id="ask-text"></p>
+      <div id="ask-fields"></div>
+      <div class="row end">
+        <button type="button" class="btn ghost" id="ask-cancel">Back</button>
+        <button type="submit" class="btn" id="ask-ok">Confirm</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="tip" id="tip" role="tooltip"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

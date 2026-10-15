@@ -1,0 +1,17 @@
+{
+  "name": "merchmarket-admin",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.108.2",
+    "express": "^4.19.2"
+  }
+}
