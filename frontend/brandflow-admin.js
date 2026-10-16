@@ -130,9 +130,6 @@ document.addEventListener('DOMContentLoaded', () => {
     _debounce(() => loadOrdersTab(), 300)
   );
 
-  // Reset DB
-  document.getElementById('reset-db')?.addEventListener('click', resetDatabase);
-
   // Load the tab requested via ?tab=inventory (e.g. after saving an item on
   // add-item.html), falling back to Orders as the default landing tab.
   const params = new URLSearchParams(location.search);
@@ -395,30 +392,6 @@ async function loadCustomersTab() {
       <td>KES ${c.total.toLocaleString()}</td>
       <td><button class="action-btn">View</button></td>
     </tr>`).join('');
-}
-
-/* ─── RESET DATABASE ──────────────────────────────────────── */
-
-async function resetDatabase() {
-  if (!confirm('⚠️ RESET? This permanently deletes ALL your orders, order items, and products. Cannot be undone.')) return;
-
-  const brand = await getBrandUser();
-  if (!brand) return;
-
-  const res = await fetch('/api/brand/reset', {
-    method: 'POST',
-    headers: await getAuthHeader()
-  });
-  const payload = await res.json().catch(() => ({}));
-
-  if (!res.ok) {
-    showToast('Failed to reset brand data', 'error');
-    console.error('resetDatabase error:', payload.error || res.statusText);
-    return;
-  }
-
-  showToast('All brand data reset.', 'success');
-  setTimeout(() => tabSwitch('orders'), 1200);
 }
 
 /* ─── HELPERS ─────────────────────────────────────────────── */
